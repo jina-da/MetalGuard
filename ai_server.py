@@ -79,11 +79,23 @@ class InferenceEngine:
 
     def _warmup(self):
         log.info("GPU 워밍업 시작...")
-        dummy = torch.zeros(1, 3, IMG_SIZE, IMG_SIZE).to(self.device)
-        for _ in range(5):
-            with torch.no_grad():
-                self.model(dummy)
-        torch.cuda.synchronize() if self.device.type == 'cuda' else None
+
+        # 1) 더미 JPEG 바이트 생성 (실제 infer() 경로 전체 예열)
+        import io as _io
+        dummy_pil = Image.fromarray(
+            np.zeros((IMG_SIZE, IMG_SIZE, 3), dtype=np.uint8), mode='RGB'
+        )
+        buf = _io.BytesIO()
+        dummy_pil.save(buf, format='JPEG', quality=95)
+        dummy_bytes = buf.getvalue()
+
+        # 2) 실제 infer() 전체 경로로 20회 워밍업
+        # PIL 디코딩 + 전처리 + GPU 추론 + synchronize 모두 포함
+        for i in range(20):
+            self.infer(dummy_bytes)
+            if self.device.type == 'cuda':
+                torch.cuda.synchronize()
+
         log.info("GPU 워밍업 완료 — 이제 추론 속도가 안정적입니다.")
 
     def infer(self, image_bytes):
@@ -97,25 +109,62 @@ class InferenceEngine:
         try:
             img = Image.open(io.BytesIO(image_bytes))
         except Exception:
-            # raw RGB 바이트인 경우 (260×260×3)
             arr = np.frombuffer(image_bytes, dtype=np.uint8)
             arr = arr.reshape((IMG_SIZE, IMG_SIZE, 3))
             img = Image.fromarray(arr, mode='RGB')
+        t1 = time.perf_counter()
 
-        # 전처리 + 추론
+        # 전처리
         tensor = self.transform(img).unsqueeze(0).to(self.device)
+        t2 = time.perf_counter()
+
+        # 추론
         with torch.no_grad():
             output = self.model(tensor)
             probs  = F.softmax(output, dim=1).squeeze().cpu().numpy()
+        if self.device.type == 'cuda':
+            torch.cuda.synchronize()
+        t3 = time.perf_counter()
 
-        inference_ms = (time.perf_counter() - t0) * 1000
+        decode_ms    = (t1 - t0) * 1000
+        preproc_ms   = (t2 - t1) * 1000
+        infer_ms     = (t3 - t2) * 1000
+        inference_ms = (t3 - t0) * 1000
+
+        if not hasattr(self, '_first_done'):
+            self._first_done = True
+            log.info(f"[구간별 시간] 디코딩={decode_ms:.1f}ms | 전처리={preproc_ms:.1f}ms | GPU추론={infer_ms:.1f}ms | 합계={inference_ms:.1f}ms")
+
+        prob_normal  = float(probs[CLASSES.index('normal')])
+        prob_crack   = float(probs[CLASSES.index('crack')])
+        prob_hole    = float(probs[CLASSES.index('hole')])
+        prob_rust    = float(probs[CLASSES.index('rust')])
+        prob_scratch = float(probs[CLASSES.index('scratch')])
+        max_prob     = float(probs.max())
+        pred_idx     = int(probs.argmax())
+        defect_class = CLASSES[pred_idx]
+
+        # 3단계 판정
+        from config import PASS_THRESHOLD, UNCERTAIN_THRESHOLD
+        if prob_normal >= PASS_THRESHOLD:
+            verdict = 'PASS'
+        elif max_prob < UNCERTAIN_THRESHOLD:
+            verdict = 'UNCERTAIN'
+        else:
+            verdict = 'FAIL'
 
         result = {
-            'prob_normal'      : float(probs[CLASSES.index('normal')]),
-            'prob_crack'       : float(probs[CLASSES.index('crack')]),
-            'prob_hole'        : float(probs[CLASSES.index('hole')]),
-            'prob_rust'        : float(probs[CLASSES.index('rust')]),
-            'prob_scratch'     : float(probs[CLASSES.index('scratch')]),
+            # 확률값
+            'prob_normal'      : round(prob_normal,  4),
+            'prob_crack'       : round(prob_crack,   4),
+            'prob_hole'        : round(prob_hole,    4),
+            'prob_rust'        : round(prob_rust,    4),
+            'prob_scratch'     : round(prob_scratch, 4),
+            # 판정 결과
+            'verdict'          : verdict,
+            'defect_class'     : defect_class,
+            'max_prob'         : round(max_prob, 4),
+            # 메타
             'inference_ms'     : round(inference_ms, 2),
             'model_version_id' : self.model_version_id,
         }
@@ -126,7 +175,17 @@ class InferenceEngine:
 #  클라이언트 핸들러 (스레드)
 # ============================================================
 def handle_client(conn, addr, engine):
+    # Nagle 알고리즘 비활성화 → 첫 패킷 지연 제거
+    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)  # 수신 버퍼 1MB
+    conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1024 * 1024)  # 송신 버퍼 1MB
+    ip = addr[0]
+    print(f"\n{'='*44}")
+    print(f"  운용 서버 연결됨!  {ip}")
+    print(f"  추론 요청 대기 중...")
+    print(f"{'='*44}\n")
     log.info(f"연결 수립 | {addr}")
+    request_count = 0
     try:
         while True:
             # --- INFER_REQ 수신 ---
@@ -147,9 +206,14 @@ def handle_client(conn, addr, engine):
             try:
                 result     = engine.infer(image_bytes)
                 response   = json.dumps(result).encode('utf-8')
+                request_count += 1
+                pred = max(
+                    (k for k in result if k.startswith('prob')),
+                    key=lambda k: result[k]
+                ).replace('prob_', '')
                 log.info(
-                    f"추론 완료 | {addr} | "
-                    f"pred={max(result, key=lambda k: result[k] if k.startswith('prob') else -1)} | "
+                    f"[{request_count}번째 요청] {ip} | "
+                    f"pred={pred} | "
                     f"{result['inference_ms']:.1f}ms"
                 )
             except Exception as e:
@@ -166,6 +230,10 @@ def handle_client(conn, addr, engine):
         log.error(f"핸들러 오류 | {addr} | {e}")
     finally:
         conn.close()
+        print(f"\n{'='*44}")
+        print(f"  운용 서버 연결 종료  {ip}")
+        print(f"  총 처리 요청: {request_count}건")
+        print(f"{'='*44}\n")
         log.info(f"연결 종료 | {addr}")
 
 
@@ -188,6 +256,8 @@ def run_server(host, port, version_tag):
     log.info(f"디바이스: {device}")
     if device.type == 'cuda':
         log.info(f"GPU: {torch.cuda.get_device_name(0)}")
+        torch.backends.cudnn.benchmark = True   # cuDNN 자동 튜닝 고정
+        torch.backends.cudnn.deterministic = False
 
     engine = InferenceEngine(version_tag, device)
 
