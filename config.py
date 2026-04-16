@@ -2,8 +2,7 @@
 
 # ── 내 서버(운용 서버) 설정 ──────────────────────────
 OPERATION_HOST = "0.0.0.0"   # 모든 IP에서 접속 허용
-CAMERA_PORT    = 8000         # 카메라 PC가 접속할 포트
-MFC_PORT       = 8001         # MFC GUI가 접속할 포트
+SERVER_PORT = 8000  # 단일 포트로 통합
 
 # ── AI 서버 설정 (김범준) ──────────────────────────────
 AI_HOST = "10.10.10.128"
@@ -25,5 +24,8 @@ UNCERTAIN_THRESHOLD = 0.60   # max_prob < 0.60 이면 UNCERTAIN
 PIPELINE_TIMEOUT_MS = 150    # 150ms 초과 시 자동 FAIL
 
 # ── 아두이노 시리얼 ───────────────────────────────────(추후 수정)
-ARDUINO_PORT     = "/dev/ttyUSB0"   # 리눅스 시리얼 포트
-ARDUINO_BAUDRATE = 9600
+ARDUINO_PORT = "/dev/ttyACM0"       # 리눅스 시리얼 포트
+ARDUINO_BAUD = 9600
+MODEL_VERSION_ID = 1
+
+SEND_RESULT_TO_MFC = True    # True로 바꾸면 MFC 전송 활성화

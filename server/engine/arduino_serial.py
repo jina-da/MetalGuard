@@ -17,6 +17,7 @@ VERDICT_CMD: dict[str, bytes] = {
     "PASS":      b"P\n",
     "FAIL":      b"F\n",
     "UNCERTAIN": b"U\n",
+    "TIMEOUT":   b"T\n",
     "TEST":      b"T\n",
 }
 
