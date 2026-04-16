@@ -13,164 +13,126 @@
 CPylonSampleProgramDlg *pMainDlg;
 UINT LiveGrabThreadCam0(LPVOID pParam)
 {
-	int nindex=0;
+	int nindex = 0;
 	int nCamIndex = *(int*)pParam;
-    
-    QueryPerformanceCounter(&(pMainDlg->start[nCamIndex]));
-    pMainDlg->nFrameCount[nCamIndex] = 0;
+
+	QueryPerformanceCounter(&(pMainDlg->start[nCamIndex]));
+	pMainDlg->nFrameCount[nCamIndex] = 0;
 	CString Info;
-	while(pMainDlg->bStopThread[nCamIndex]==true)
-	{	
-       if(pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex]==true)
-	   {
-		   		
-			if(pMainDlg->m_strCamSerial[nCamIndex]==pMainDlg->m_ctrlCamList.GetItemText(0,2))
+
+	while (pMainDlg->bStopThread[nCamIndex] == true)
+	{
+		// 1. 카메라 연결 해제 체크 (기존 로직 유지)
+		if (pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] == true)
+		{
+			if (pMainDlg->m_strCamSerial[nCamIndex] == pMainDlg->m_ctrlCamList.GetItemText(0, 2))
 			{
 				pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] = false;
-				pMainDlg->m_ctrlCamList.SetItemText(0,3,_T("LostConnection"));	
+				pMainDlg->m_ctrlCamList.SetItemText(0, 3, _T("LostConnection"));
 			}
-			else if(pMainDlg->m_strCamSerial[nCamIndex]==pMainDlg->m_ctrlCamList.GetItemText(1,2))
+			else if (pMainDlg->m_strCamSerial[nCamIndex] == pMainDlg->m_ctrlCamList.GetItemText(1, 2))
 			{
 				pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] = false;
-				pMainDlg->m_ctrlCamList.SetItemText(1,3,_T("LostConnection"));
+				pMainDlg->m_ctrlCamList.SetItemText(1, 3, _T("LostConnection"));
 			}
-	   }
-	   else
-	   {
-		   if(pMainDlg->m_CameraManager.CheckCaptureEnd(nCamIndex)) //exposure end true일때 
-		   {
-					pMainDlg->nFrameCount[nCamIndex]++;
-					QueryPerformanceCounter(&(pMainDlg->end[nCamIndex]));
-					if(pMainDlg->m_CameraManager.m_strCM_ImageForamt[nCamIndex]=="Mono8")
-					{
-						for(int y=0; y<pMainDlg->m_CameraManager.m_iCM_Height[nCamIndex]; y++)          // widht가 4의 배수가 아닌 경우 ex)659  - > 660으로 memcpy
-						{ 			
-							memcpy(&pMainDlg->pImageresizeOrgBuffer[nCamIndex][nindex][y*pMainDlg->m_CameraManager.m_iCM_reSizeWidth[nCamIndex]],&pMainDlg->m_CameraManager.pImage8Buffer[nCamIndex][y*pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex]],pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex]);
-						}	
-						pMainDlg->m_CameraManager.ReadEnd(nCamIndex);  // exposure end flag 변경 
-						switch(nCamIndex)
-						{
-						   case 0:
-							  pMainDlg->DisplayCam0(pMainDlg->pImageresizeOrgBuffer[0][nindex]);                         
-							  break;
-						   case 1:
-							  pMainDlg->DisplayCam1(pMainDlg->pImageresizeOrgBuffer[1][nindex]);                         
-							  break;
-						   case 2:
-							  pMainDlg->DisplayCam2(pMainDlg->pImageresizeOrgBuffer[2][nindex]);                         
-							  break;
-						   case 3:
-							  pMainDlg->DisplayCam3(pMainDlg->pImageresizeOrgBuffer[3][nindex]);                         
-							  break;
-						}
+		}
+		else
+		{
+			// 2. 이미지 획득 완료 체크
+			if (pMainDlg->m_CameraManager.CheckCaptureEnd(nCamIndex))
+			{
+				pMainDlg->nFrameCount[nCamIndex]++;
+				QueryPerformanceCounter(&(pMainDlg->end[nCamIndex]));
 
-					}
-					else if(pMainDlg->m_CameraManager.m_strCM_ImageForamt[nCamIndex]=="Mono12" || pMainDlg->m_CameraManager.m_strCM_ImageForamt[nCamIndex]=="Mono16")
+				// [민기 파트 수정 시작]
+				// 현재 Mono8 모드이지만, 전처리 결과는 3채널 BGR이므로 Color 버퍼에 복사합니다.
+				if (pMainDlg->m_CameraManager.m_strCM_ImageForamt[nCamIndex] == "Mono8")
+				{
+					// [핵심] 기존의 전체 해상도 for문 memcpy를 지우고, 전처리된 260x260x3 데이터를 복사합니다.
+					if (pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex] != NULL)
 					{
-						int height = pMainDlg->m_CameraManager.m_iCM_Height[nCamIndex];
-						int width = pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex];
-						for(int y=0; y<height; y++)  // widht가 4의 배수가 아닌 경우 ex)659  - > 660으로 memcpy
-						{ 
-							for(int x = 0; x < width;x++)
-							{								   						  
-								pMainDlg->pImageresizeOrgBuffer[nCamIndex][nindex][y*width+x] = (pMainDlg->m_CameraManager.pImage12Buffer[nCamIndex][y*pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex]+x]/16);
-							}
-						}	
-						pMainDlg->m_CameraManager.ReadEnd(nCamIndex);  // exposure end flag 변경 
-                        switch(nCamIndex)
-						{
-							case 0:
-						      pMainDlg->DisplayCam0(pMainDlg->pImageresizeOrgBuffer[0][nindex]);
-							  break;
-							case 1:
-						      pMainDlg->DisplayCam1(pMainDlg->pImageresizeOrgBuffer[1][nindex]);
-							  break;
-							case 2:
-						      pMainDlg->DisplayCam2(pMainDlg->pImageresizeOrgBuffer[2][nindex]);
-							  break;
-							case 3:
-						      pMainDlg->DisplayCam3(pMainDlg->pImageresizeOrgBuffer[3][nindex]);
-							  break;
-						}
+						int nRoiSize = 260 * 260 * 3;
+						memcpy(pMainDlg->pImageColorDestBuffer[nCamIndex][nindex],
+							pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex], nRoiSize);
+					}
 
-					}
-					else  // bayer color & YUV422
+					pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
+
+					// 화면 출력 (민기 님이 고친 260x260 전용 DisplayCam 호출)
+					switch (nCamIndex)
 					{
-						memcpy(pMainDlg->pImageColorDestBuffer[nCamIndex][nindex],pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex],pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex]*pMainDlg->m_CameraManager.m_iCM_Height[nCamIndex]*3);
-						/*for(int y=0; y<pMainDlg->m_CameraManager.m_iCM_Height[nCamIndex]; y++)          // widht가 4의 배수가 아닌 경우 ex)659  - > 660으로 memcpy
-						{ 			
-							memcpy(&pMainDlg->pImageresizeOrgBuffer[nCamIndex][nindex][y*pMainDlg->m_CameraManager.m_iCM_reSizeWidth[nCamIndex]],&pMainDlg->m_CameraManager.pImage8Buffer[nCamIndex][y*pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex]],pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex]);
-						}*/	
-						pMainDlg->m_CameraManager.ReadEnd(nCamIndex);  // exposure end flag 변경 
-						switch(nCamIndex)
-						{
-						  case 0:
-					 	     pMainDlg->DisplayCam0(pMainDlg->pImageColorDestBuffer[0][nindex]);
-							  //pMainDlg->DisplayCam0(pMainDlg->pImageresizeOrgBuffer[nCamIndex][nindex]);
-							 break;
-						  case 1:
-					 	     pMainDlg->DisplayCam1(pMainDlg->pImageColorDestBuffer[1][nindex]);
-							 break;
-						  case 2:
-					 	     pMainDlg->DisplayCam2(pMainDlg->pImageColorDestBuffer[2][nindex]);
-							  //pMainDlg->DisplayCam0(pMainDlg->pImageresizeOrgBuffer[nCamIndex][nindex]);
-							 break;
-						  case 3:
-					 	     pMainDlg->DisplayCam3(pMainDlg->pImageColorDestBuffer[3][nindex]);
-							 break;
-						}
-						
+					case 0: pMainDlg->DisplayCam0(pMainDlg->pImageColorDestBuffer[0][nindex]); break;
+					case 1: pMainDlg->DisplayCam1(pMainDlg->pImageColorDestBuffer[1][nindex]); break;
+					case 2: pMainDlg->DisplayCam2(pMainDlg->pImageColorDestBuffer[2][nindex]); break;
+					case 3: pMainDlg->DisplayCam3(pMainDlg->pImageColorDestBuffer[3][nindex]); break;
 					}
-					nindex++;
-					if(nindex==BUF_NUM)
+				}
+				// [민기 파트 수정 끝]
+				else if (pMainDlg->m_CameraManager.m_strCM_ImageForamt[nCamIndex] == "Mono12" || pMainDlg->m_CameraManager.m_strCM_ImageForamt[nCamIndex] == "Mono16")
+				{
+					// Mono12/16 로직은 기존 그대로 유지 (필요시 위와 동일하게 수정 가능)
+					int height = pMainDlg->m_CameraManager.m_iCM_Height[nCamIndex];
+					int width = pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex];
+					for (int y = 0; y < height; y++)
 					{
-						 nindex=0;
+						for (int x = 0; x < width; x++)
+						{
+							pMainDlg->pImageresizeOrgBuffer[nCamIndex][nindex][y * width + x] = (pMainDlg->m_CameraManager.pImage12Buffer[nCamIndex][y * pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex] + x] / 16);
+						}
 					}
-				   if(pMainDlg->end[nCamIndex].QuadPart/(pMainDlg->freq[nCamIndex].QuadPart/1000.0) > pMainDlg->start[nCamIndex].QuadPart/(pMainDlg->freq[nCamIndex].QuadPart/1000.0) + 1000)  
-				   {									 				  			
-						CString temp;
-						temp.Format(_T("%d fps"),pMainDlg->nFrameCount[nCamIndex]);
-						if(nCamIndex==0)
-						{
-						   pMainDlg->SetDlgItemText(IDC_CAMERA0_STATS,temp);
-						}
-						else if(nCamIndex==1)
-						{
-							pMainDlg->SetDlgItemText(IDC_CAMERA1_STATS,temp);
-						}
-						else if(nCamIndex==2)
-						{
-							pMainDlg->SetDlgItemText(IDC_CAMERA2_STATS,temp);
-						}
-						else if(nCamIndex==3)
-						{
-							pMainDlg->SetDlgItemText(IDC_CAMERA3_STATS,temp);
-						}
-							  
-						pMainDlg->nFrameCount[nCamIndex] = 0;
-						QueryPerformanceCounter(&(pMainDlg->start[nCamIndex]));
+					pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
+					switch (nCamIndex)
+					{
+					case 0: pMainDlg->DisplayCam0(pMainDlg->pImageresizeOrgBuffer[0][nindex]); break;
+					case 1: pMainDlg->DisplayCam1(pMainDlg->pImageresizeOrgBuffer[1][nindex]); break;
+					case 2: pMainDlg->DisplayCam2(pMainDlg->pImageresizeOrgBuffer[2][nindex]); break;
+					case 3: pMainDlg->DisplayCam3(pMainDlg->pImageresizeOrgBuffer[3][nindex]); break;
 					}
-				   Info.Format(_T("Grabbed Frame = %d , SkippedFrame = %d"),pMainDlg->m_CameraManager.m_iGrabbedFrame[nCamIndex],pMainDlg->m_CameraManager.m_iSkippiedFrame[nCamIndex]);
-				   switch(nCamIndex)
-				   {
-						case 0:
-							pMainDlg->SetDlgItemText(IDC_CAM0_INFO,Info);
-							break;
-						case 1:
-							pMainDlg->SetDlgItemText(IDC_CAM1_INFO,Info);
-							break;
-						case 2:
-							pMainDlg->SetDlgItemText(IDC_CAM2_INFO,Info);
-							break;
-						case 3:
-							pMainDlg->SetDlgItemText(IDC_CAM3_INFO,Info);
-							break;
-				   }
-		   }
-	   }
-	//   Sleep(1);
+				}
+				else // bayer color & YUV422
+				{
+					// 이 부분도 260x260 전처리를 쓴다면 아래와 같이 수정
+					int nRoiSize = 260 * 260 * 3;
+					memcpy(pMainDlg->pImageColorDestBuffer[nCamIndex][nindex], pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex], nRoiSize);
+					pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
+					switch (nCamIndex)
+					{
+					case 0: pMainDlg->DisplayCam0(pMainDlg->pImageColorDestBuffer[0][nindex]); break;
+					case 1: pMainDlg->DisplayCam1(pMainDlg->pImageColorDestBuffer[1][nindex]); break;
+					case 2: pMainDlg->DisplayCam2(pMainDlg->pImageColorDestBuffer[2][nindex]); break;
+					case 3: pMainDlg->DisplayCam3(pMainDlg->pImageColorDestBuffer[3][nindex]); break;
+					}
+				}
+
+				nindex++;
+				if (nindex == BUF_NUM) nindex = 0;
+
+				// 3. FPS 계산 및 정보 출력 (기존 로직 유지)
+				if (pMainDlg->end[nCamIndex].QuadPart / (pMainDlg->freq[nCamIndex].QuadPart / 1000.0) > pMainDlg->start[nCamIndex].QuadPart / (pMainDlg->freq[nCamIndex].QuadPart / 1000.0) + 1000)
+				{
+					CString temp;
+					temp.Format(_T("%d fps"), pMainDlg->nFrameCount[nCamIndex]);
+					if (nCamIndex == 0) pMainDlg->SetDlgItemText(IDC_CAMERA0_STATS, temp);
+					else if (nCamIndex == 1) pMainDlg->SetDlgItemText(IDC_CAMERA1_STATS, temp);
+					else if (nCamIndex == 2) pMainDlg->SetDlgItemText(IDC_CAMERA2_STATS, temp);
+					else if (nCamIndex == 3) pMainDlg->SetDlgItemText(IDC_CAMERA3_STATS, temp);
+
+					pMainDlg->nFrameCount[nCamIndex] = 0;
+					QueryPerformanceCounter(&(pMainDlg->start[nCamIndex]));
+				}
+
+				Info.Format(_T("Grabbed Frame = %d , SkippedFrame = %d"), pMainDlg->m_CameraManager.m_iGrabbedFrame[nCamIndex], pMainDlg->m_CameraManager.m_iSkippiedFrame[nCamIndex]);
+				switch (nCamIndex)
+				{
+				case 0: pMainDlg->SetDlgItemText(IDC_CAM0_INFO, Info); break;
+				case 1: pMainDlg->SetDlgItemText(IDC_CAM1_INFO, Info); break;
+				case 2: pMainDlg->SetDlgItemText(IDC_CAM2_INFO, Info); break;
+				case 3: pMainDlg->SetDlgItemText(IDC_CAM3_INFO, Info); break;
+				}
+			}
+		}
+		Sleep(1); // 루프가 너무 빠르면 CPU 점유율이 올라가므로 추가 권장
 	}
-	
 	return 0;
 }
 
@@ -684,7 +646,6 @@ void CPylonSampleProgramDlg::AllocImageBuf(void)
 		pImageColorDestBuffer[m_iCameraIndex] = (unsigned char**)malloc(BUF_NUM * sizeof(unsigned char*));
 		for (int i = 0; i < BUF_NUM; i++)
 		{
-			// 260 * 260 * 3 채널 크기로 할당
 			pImageColorDestBuffer[m_iCameraIndex][i] = (unsigned char*)malloc(260 * 260 * 3);
 			memset(pImageColorDestBuffer[m_iCameraIndex][i], 0, 260 * 260 * 3);
 		}

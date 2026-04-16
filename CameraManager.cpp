@@ -824,6 +824,7 @@ int CCameraManager::SetCommand(int nCamIndex, char *szNodeName)
 			return -2;   
     }
 }
+
 int CCameraManager::SaveImage(int nFileFormat, unsigned char* pImage, char *filename,int nPixelType,int width, int height,int nColorband)
 {
 	EImageFileFormat ImageFileFormat;
@@ -857,6 +858,7 @@ int CCameraManager::SaveImage(int nFileFormat, unsigned char* pImage, char *file
 	CImagePersistence::Save( ImageFileFormat,filename,pImage,width*height*nColorband,ImagePixleType,width,height,0,ImageOrientation_TopDown);
 	return 0;
 }
+
 void CCameraManager::OnImagesSkipped( CInstantCamera& camera, size_t countOfSkippedImages)
 {   
 
@@ -876,7 +878,7 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 		{
 			int nCameraIndex = (int)ptrGrabResult->GetCameraContext();
 
-			// 1. Pylon 버퍼를 OpenCV Mat으로 연결 (1920x1200 등)
+			// 1. Pylon 버퍼 -> OpenCV Mat (원본 해상도)
 			int width = (int)ptrGrabResult->GetWidth();
 			int height = (int)ptrGrabResult->GetHeight();
 			cv::Mat matRaw(height, width, CV_8UC1, (uint8_t*)ptrGrabResult->GetBuffer());
@@ -893,21 +895,18 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 				{
 					cv::Rect roiRect(startX, startY, roiW, roiH);
 
-					// 3. 전처리: 크롭 및 3채널(BGR) 복제
-					// clone()을 써야 Pylon 버퍼로부터 독립된 메모리를 가집니다.
+					// 3. 전처리: 크롭 후 3채널(BGR)로 변환
 					cv::Mat croppedImg = matRaw(roiRect).clone();
 					cv::Mat finalImg;
 					cv::cvtColor(croppedImg, finalImg, cv::COLOR_GRAY2BGR);
 
-					// 4. GUI 출력용 버퍼 안전 복사
+					// 4. 전처리된 이미지를 관리 버퍼에 복사 (260x260x3)
 					if (pImage24Buffer[nCameraIndex] != NULL)
 					{
 						size_t nCopySize = (size_t)finalImg.total() * finalImg.elemSize();
-						// 이미 Connect_Camera에서 충분한 크기로 할당되었으므로 바로 복사합니다.
 						memcpy(pImage24Buffer[nCameraIndex], finalImg.data, nCopySize);
 					}
-
-					// ** 중요: 여기에 cv::imshow가 있으면 중단점이 발생하므로 삭제했습니다. **
+					// ** cv::imshow는 스레드 충돌 방지를 위해 제거됨 **
 				}
 			}
 
@@ -917,7 +916,7 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 	}
 	catch (const std::exception& e)
 	{
-		TRACE(_T("Exception in OnImageGrabbed: %S\n"), e.what());
+		TRACE(_T("OnImageGrabbed Error: %S\n"), e.what());
 	}
 }
 
