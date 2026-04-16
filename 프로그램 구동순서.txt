@@ -1,0 +1,141 @@
+[ 구동 환경 ]
+
+-. 32bit OS
+
+-. Pylon SDK 3.x  이상 
+
+-. Visual Studio 2008 이상
+
+-. Camera관련 코드는 CameraManager class 에 있습니다.
+
+ [ 프로그램 구동 순서 ]
+
+**Heartbeat time 설정은 아래 두가지 방법 입니다.
+
+[ 방법 1]-> Registry 설정
+
+#if _DEBUG
+
+     _putenv("PYLON_GIGE_HEARTBEAT=3000");  /* set to 3000 ms = 3sec */
+
+#else if 
+
+     _putenv("PYLON_GIGE_HEARTBEAT=3000");  /* set to 3000 ms = 3sec */
+
+#endif
+
+ 
+
+[ 방법 2] -> 코드 설정 CameraManager.cpp -> OpenCamera 함수
+
+ 
+
+//Debug 모드중BreakPoint 걸어서코드확인시HeartbeatTime시간동안코드이동이없는경우카메라연결이끊어짐
+
+//release 배포시에는시간을3000ms(3초)로설정
+
+m_pHeartbeatTimeout[ nCamIndex ] = m_pCamera[ nCamIndex ].GetTLNodeMap().GetNode("HeartbeatTimeout");
+
+m_pHeartbeatTimeout[ nCamIndex ]->SetValue(3000);
+
+ 
+
+ 
+
+1. CameraInfo.txt에서 카메라 serial number 수정 [ 보유하고 있는 제품 serial number로 수정 카메라 한대인 경우 CAM1 만 수정 ]
+
+2. Find camera
+
+3. 리스트에서 카메라 선택                   
+
+4. Open Camera
+
+5. Connect Camera -> AOI 및 이미지 포맷 설정  [ 기본 640 x 480 , Mono8 or Bayer]
+
+   -> Trigger 설정 [ Software trigger모드 ]
+
+6. Live Grab  [ Grab 완료후에 CameraManager class OnImageGrabbed call back함수에서 이미지 conversion 함 ]
+
+   -> S/w Trigger 모드인 경우 Software Trigger Execute 로 영상 취득
+
+7. SaveImage
+
+ 
+
+카메라 설정 변경시에는 아래 코드를 이용 하세요.
+
+Connect Camera에 보시면 Enumeration , Integer, Float, Boolean 형에 따른 카메라 파라미터 Read / Write 하는
+
+부분을 참고하시면 됩니다.
+
+2번째 및 3번째 인자로 들어가는 string의 경우 Camera_Paramter_Name.txt 참고하시면 됩니다.
+
+3번째 인자의 경우 Node Name 입니다.
+
+Set 명령의 경우 2번째 인자는 Enumeration의 경우 Value 입니다.
+
+Camera_Paramter_Name.txtr에 추가 중이므로 없는 내용이 있을 수 있으니 필요한 기능의 경우 Node Name 및 Value의 설명은 
+Pylon Viewer -> View -> Feature Documentaion 체크 후에
+
+Feature 에서 gain을 선택하면 아래 설명이 나와 있습니다.
+
+ 
+
+ 
+
+//Enumeration Get/Set example
+
+//char Temp[20];
+
+//(CString)Temp==_T("");
+
+//m_CameraManager.GetEnumeration(m_iCameraIndex,Temp,"GainAuto"); 
+
+//m_CameraManager.SetEnumeration(m_iCameraIndex,"Once","GainAuto");
+
+ 
+
+//Integer Get/Set example
+
+//int nTemp;
+
+//m_CameraManager.GetInteger(m_iCameraIndex,&nTemp,"GainRaw");
+
+//m_CameraManager.SetInteger(m_iCameraIndex,400,"GainRaw");
+
+ 
+
+//Boolean Get/Set example
+
+//bool bTemp;
+
+//m_CameraManager.GetBoolean(m_iCameraIndex,&bTemp,"ReverseX"); 
+
+//m_CameraManager.SetBoolean(m_iCameraIndex,true,"ReverseX"); 
+
+ 
+
+// Command Set example
+
+//m_CameraManager.SetCommand(m_iCameraIndex,"TriggerSoftware");
+
+ 
+
+ 
+
+[ 명령 한번에 카메라 두대 동시 grab 관련 코드 ]
+
+수정된 코드는 다음과 같습니다.
+
+int CCameraManager::GrabLive(int nCamIndex,int nMode)  // nMode =0 -> 개별 Grab , nMode=1 -> 동시 grab
+
+int CCameraManager::LiveStop(int nCamIndex, int nMode)
+
+ 
+
+MainDialog에 Two camera Live 추가 참고.
+
+ 
+
+보다 자세한 코드는 첨부 샘플 예제로 확인 부탁 드립니다.
+

@@ -1,0 +1,236 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#ifndef APSTUDIO_INVOKED
+#include "targetver.h"
+#endif
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 한국어(대한민국) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)
+LANGUAGE LANG_KOREAN, SUBLANG_DEFAULT
+#pragma code_page(949)
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#ifndef APSTUDIO_INVOKED\r\n"
+    "#include ""targetver.h""\r\n"
+    "#endif\r\n"
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)\r\n"
+    "LANGUAGE 18, 1\r\n"
+    "#pragma code_page(949)\r\n"
+    "#include ""res\\PylonSampleProgram.rc2""  // Microsoft Visual C++ 이외의 다른 도구에서 편집한 리소스입니다.\r\n"
+    "#include ""l.KOR\\afxres.rc""      // 표준 구성 요소입니다.\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\PylonSampleProgram.ico"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 170, 62
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PylonSampleProgram 정보"
+FONT 9, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,14,14,21,20
+    LTEXT           "PylonSampleProgram, 버전 1.0",IDC_STATIC,42,14,114,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) 2012",IDC_STATIC,42,26,114,8
+    DEFPUSHBUTTON   "확인",IDOK,113,41,50,14,WS_GROUP
+END
+
+IDD_PYLONSAMPLEPROGRAM_DIALOG DIALOGEX 0, 0, 775, 452
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "PylonSampleProgram"
+FONT 9, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    PUSHBUTTON      "1. Find_Camera",IDC_FIND_CAM_BTN,530,9,70,26
+    CONTROL         "",IDC_CAMERA_LIST,"SysListView32",LVS_REPORT | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,533,43,233,118
+    PUSHBUTTON      "2_1. Open_Camera",IDC_OPEN_CAMERA_BTN,534,168,70,26
+    PUSHBUTTON      "3. Connect_Camera",IDC_CONNECT_CAMERA_BTN,534,208,70,26
+    PUSHBUTTON      "Grab_Single",IDC_GRAB_SINGLE_BTN,534,241,70,26
+    PUSHBUTTON      "2_2. Close_Camera",IDC_CLOSE_CAM_BTN,621,168,70,26
+    PUSHBUTTON      "SoftTrigger_Execute",IDC_SOFT_TRIG_BTN,621,243,88,25
+    PUSHBUTTON      "Exit",IDC_EXIT_BTN,534,279,71,28
+    CONTROL         "Camera0_Live_Grab",IDC_CAM0_LIVE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,9,10,77,14
+    CONTROL         "",IDC_CAM0_DISPLAY,"Static",SS_BLACKFRAME,8,30,226,167
+    LTEXT           "",IDC_CAMERA0_STATS,92,11,66,16,0,WS_EX_CLIENTEDGE
+    LTEXT           "",IDC_CAM0_INFO,7,208,211,15,0,WS_EX_STATICEDGE
+    CONTROL         "",IDC_CAM1_DISPLAY,"Static",SS_BLACKFRAME,10,251,222,167
+    CONTROL         "Camera1_Live_Grab",IDC_CAM1_LIVE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,231,77,14
+    LTEXT           "",IDC_CAMERA1_STATS,94,232,66,16,0,WS_EX_CLIENTEDGE
+    LTEXT           "",IDC_CAM1_INFO,9,423,211,15,0,WS_EX_STATICEDGE
+    LTEXT           "현재 선택한 카메라",IDC_STATIC,608,10,71,9
+    CTEXT           "",IDC_SELECT_CAMERA,608,24,138,14,0,WS_EX_STATICEDGE
+    PUSHBUTTON      "Save_Image",IDC_SAVE_IMG_BTN,621,279,71,28
+    PUSHBUTTON      "Trigger_설정",IDC_BUTTON5,534,322,71,28
+    PUSHBUTTON      "TWO_Camera_Live",IDC_TWO_CAMERA_LIVE_BTN,534,362,95,24
+    CONTROL         "Camera2_Live_Grab",IDC_CAM2_LIVE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,248,10,77,14
+    CONTROL         "",IDC_CAM2_DISPLAY,"Static",SS_BLACKFRAME,247,30,226,167
+    LTEXT           "",IDC_CAMERA2_STATS,331,11,66,16,0,WS_EX_CLIENTEDGE
+    LTEXT           "",IDC_CAM2_INFO,246,208,211,15,0,WS_EX_STATICEDGE
+    CONTROL         "",IDC_CAM3_DISPLAY,"Static",SS_BLACKFRAME,249,251,222,167
+    CONTROL         "Camera3_Live_Grab",IDC_CAM3_LIVE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,250,231,77,14
+    LTEXT           "",IDC_CAMERA3_STATS,333,232,66,16,0,WS_EX_CLIENTEDGE
+    LTEXT           "",IDC_CAM3_INFO,248,423,211,15,0,WS_EX_STATICEDGE
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041203b5"
+        BEGIN
+            VALUE "CompanyName", "TODO: <회사 이름>"
+            VALUE "FileDescription", "TODO: <파일 설명>"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "PylonSampleProgram.exe"
+            VALUE "LegalCopyright", "TODO: (c) <회사 이름>.  All rights reserved."
+            VALUE "OriginalFilename", "PylonSampleProgram.exe"
+            VALUE "ProductName", "TODO: <제품 이름>"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x412, 949
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 163
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 55
+    END
+
+    IDD_PYLONSAMPLEPROGRAM_DIALOG, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 451
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_PYLONSAMPLEPROGRAM_DIALOG AFX_DIALOG_LAYOUT
+BEGIN
+    0
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE
+BEGIN
+    IDS_ABOUTBOX            "PylonSampleProgram 정보(&A)..."
+END
+
+#endif    // 한국어(대한민국) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)
+LANGUAGE 18, 1
+#pragma code_page(949)
+#include "res\PylonSampleProgram.rc2"  // Microsoft Visual C++ 이외의 다른 도구에서 편집한 리소스입니다.
+#include "l.KOR\afxres.rc"      // 표준 구성 요소입니다.
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+
