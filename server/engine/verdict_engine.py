@@ -104,7 +104,7 @@ class VerdictEngine:
         verdict_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # 1. AI 추론 요청 (CmdID.INFER_REQ → CmdID.INFER_RES)
-        ai_response = self._ai.infer(task.image_bytes)
+        ai_response = self._ai.infer(task.image_bytes, task.inspection_id)
 
         timeout_flag = ai_response is None
         if timeout_flag:
@@ -271,4 +271,4 @@ class VerdictEngine:
             return
         ok = self._arduino.send_verdict(verdict)
         if not ok:
-            logger.warning(f"[VerdictEngine] 아두이노 전송 실패: verdict={verdict}")
+            logger.warning(f"[VerdictEngine] 아두이노 전송 실패 : verdict={verdict}")

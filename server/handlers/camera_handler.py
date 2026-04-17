@@ -51,14 +51,14 @@ class CameraHandler:
         """
         # 이미지 크기 수신 (4B)
         raw_img_size = self._recv_exact(sock, 4)
-        if not raw_img_size:
+        if raw_img_size is None:
             logger.error("[CameraHandler] 이미지 크기 수신 실패")
             return
         image_size = struct.unpack(">I", raw_img_size)[0]
 
         # 이미지 바이트 수신
         image_bytes = self._recv_exact(sock, image_size)
-        if not image_bytes:
+        if image_bytes is None:
             logger.error("[CameraHandler] 이미지 바이트 수신 실패")
             return
 

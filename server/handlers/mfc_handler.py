@@ -85,13 +85,13 @@ def handle_reclassify_confirm(conn: socket.socket, body: dict, db_manager: DBMan
             confidence=body["confidence"],
             reason=body["reason"],
         )
-        logger.info(f"[MFC] 재분류 DB 저장 완료: inspection_id={body['inspection_id']}")
+        logger.info(f"[MFC] 재분류 DB 저장 완료 : inspection_id={body['inspection_id']}")
         _send_packet(conn, CmdID.RECLASSIFY_CONFIRM_RES,
                      {"status": "SUCCESS"},
                      log_tag="RECLASSIFY_CONFIRM_RES(402)")
 
     except Exception as e:
-        logger.error(f"[MFC] 재분류 DB 저장 실패: {e}")
+        logger.error(f"[MFC] 재분류 DB 저장 실패 : {e}")
         _send_packet(conn, CmdID.RECLASSIFY_CONFIRM_RES,
                      {"status": "FAIL"},
                      log_tag="RECLASSIFY_CONFIRM_RES(402)")

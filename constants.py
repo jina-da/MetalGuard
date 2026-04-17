@@ -71,5 +71,5 @@ def parse_header(raw: bytes) -> tuple[int, int]:
     """
     sig, cmd_id, body_size = struct.unpack(PACKET_HEADER_FORMAT, raw)
     if sig != PACKET_SIGNATURE:
-        raise ValueError(f"잘못된 시그니처: 0x{sig:04X} (expected 0x{PACKET_SIGNATURE:04X})")
+        raise ValueError(f"잘못된 시그니처 : 0x{sig:04X} (expected 0x{PACKET_SIGNATURE:04X})")
     return cmd_id, body_size
