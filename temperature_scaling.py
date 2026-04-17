@@ -11,7 +11,15 @@ temperature_scaling.py — 온도 스케일링 (Temperature Scaling)
   T = 1 → 원본 그대로
 
 사용법:
+  # 라벨을 정확히 아는 경우
   python temperature_scaling.py --folder test_images/ --labels 0,3,2,2,4,0
+
+  # 라벨을 모르는 이미지는 ? 로 표시 (모델 예측값을 임시 라벨로 자동 사용)
+  python temperature_scaling.py --folder test_images/ --labels 0,?,?,?,0,3,3,1,3,2,2,4,0
+
+  # 라벨을 전혀 모르는 경우 (전부 모델 예측값으로 자동 설정)
+  python temperature_scaling.py --folder test_images/ --labels auto
+
   (labels: crack=0, hole=1, normal=2, rust=3, scratch=4)
 
   --tmin, --tmax, --steps 으로 탐색 범위 조정 가능
@@ -27,7 +35,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from config import CLASSES, RESULT_DIR
+from config import CLASSES, RESULT_DIR, PASS_THRESHOLD, UNCERTAIN_THRESHOLD
 from dataset import get_transforms
 from model import load_model
 
@@ -46,6 +54,59 @@ def predict_with_temperature(model, image_path, device, transform, temperature=1
     return probs
 
 
+def get_logits(model, image_path, device, transform):
+    """logit만 추출 (온도 탐색용)"""
+    img    = Image.open(image_path)
+    tensor = transform(img).unsqueeze(0).to(device)
+    model.eval()
+    with torch.no_grad():
+        logits = model(tensor).squeeze().cpu()
+    return logits
+
+
+# ============================================================
+#  라벨 파싱 — ? 지원 + auto 모드
+#  ? 인 경우 모델 예측값(T=1.0 기준 argmax)을 임시 라벨로 사용
+# ============================================================
+def parse_labels(label_str, image_paths, model, device, transform):
+    """
+    label_str : '0,?,2,3,auto' 형식 또는 'auto' (전체 자동)
+    ? 또는 auto → 모델 예측값을 임시 라벨로 사용
+    """
+    if label_str.strip().lower() == 'auto':
+        raw = ['?'] * len(image_paths)
+    else:
+        raw = [x.strip() for x in label_str.split(',')]
+
+    if len(raw) != len(image_paths):
+        print(f"라벨 수({len(raw)})와 이미지 수({len(image_paths)})가 다릅니다.")
+        print("이미지 순서:", [os.path.basename(p) for p in image_paths])
+        exit(1)
+
+    labels   = []
+    auto_cnt = 0
+    print("\n이미지 순서 및 라벨 확인:")
+    for img_path, r in zip(image_paths, raw):
+        fname = os.path.basename(img_path)
+        if r == '?':
+            # 모델 예측값을 임시 라벨로 사용
+            logits = get_logits(model, img_path, device, transform)
+            pred   = int(logits.argmax().item())
+            labels.append(pred)
+            auto_cnt += 1
+            print(f"  {fname:<20} → {CLASSES[pred]:<10} (label={pred})  [자동]")
+        else:
+            lbl = int(r)
+            labels.append(lbl)
+            print(f"  {fname:<20} → {CLASSES[lbl]:<10} (label={lbl})")
+
+    if auto_cnt > 0:
+        print(f"\n  ※ {auto_cnt}개 이미지는 모델 예측값을 임시 라벨로 사용했습니다.")
+        print(f"  ※ 정확한 라벨을 알고 있다면 직접 입력하면 더 정확한 T를 찾을 수 있습니다.")
+
+    return labels
+
+
 # ============================================================
 #  최적 온도 탐색 — NLL 최소화 기준
 # ============================================================
@@ -56,13 +117,8 @@ def find_best_temperature(model, image_paths, labels, device, transform,
 
     # 모든 이미지의 logit 수집
     all_logits = []
-    model.eval()
     for img_path in image_paths:
-        img    = Image.open(img_path)
-        tensor = transform(img).unsqueeze(0).to(device)
-        with torch.no_grad():
-            logits = model(tensor).squeeze().cpu()
-        all_logits.append(logits)
+        all_logits.append(get_logits(model, img_path, device, transform))
 
     all_logits = torch.stack(all_logits)
     all_labels = torch.tensor(labels, dtype=torch.long)
@@ -96,18 +152,17 @@ def find_best_temperature(model, image_paths, labels, device, transform,
 
     # 각 이미지에 최적 T 적용 후 확률 출력
     print(f"\n  [T={best_t:.2f} 적용 시 각 이미지 확률]")
-    print(f"  {'파일명':<20} {'예측클래스':<12} {'normal':<8} {'max_prob':<10} {'판정예상'}")
+    print(f"  {'파일명':<20} {'예측클래스':<12} {'normal':<8} {'max_prob':<10} {'판정'}")
     print(f"  {'-'*65}")
-    from config import PASS_THRESHOLD, UNCERTAIN_THRESHOLD
     for img_path, lbl in zip(image_paths, labels):
-        probs_t = predict_with_temperature(model, img_path, device, transform, best_t)
+        probs_t     = predict_with_temperature(model, img_path, device, transform, best_t)
         pred_cls    = CLASSES[probs_t.argmax()]
         normal_prob = probs_t[CLASSES.index('normal')]
         max_prob    = probs_t.max()
         true_cls    = CLASSES[lbl]
-        verdict = ('PASS' if normal_prob >= PASS_THRESHOLD
-                   else 'UNCERTAIN' if max_prob < UNCERTAIN_THRESHOLD
-                   else 'FAIL')
+        verdict     = ('PASS'      if normal_prob >= PASS_THRESHOLD
+                  else 'UNCERTAIN' if max_prob    <  UNCERTAIN_THRESHOLD
+                  else 'FAIL')
         correct = '✓' if pred_cls == true_cls else '✗'
         fname   = os.path.basename(img_path)
         print(f"  {fname:<20} {pred_cls:<12} {normal_prob:.4f}   {max_prob:.4f}     {verdict} {correct}")
@@ -144,14 +199,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='온도 스케일링 최적 T 탐색')
     parser.add_argument('--folder',  type=str, required=True)
     parser.add_argument('--labels',  type=str, required=True,
-                        help='crack=0,hole=1,normal=2,rust=3,scratch=4 순서로 쉼표 구분')
+                        help=(
+                            'crack=0,hole=1,normal=2,rust=3,scratch=4 순서로 쉼표 구분. '
+                            '모르는 이미지는 ? 로 표시 (모델 예측값 자동 사용). '
+                            '전부 모를 경우 auto 입력.'
+                        ))
     parser.add_argument('--version', type=str, default='best')
-    parser.add_argument('--tmin',    type=float, default=0.1, help='탐색 최소 T (기본 0.1)')
+    parser.add_argument('--tmin',    type=float, default=0.1,  help='탐색 최소 T (기본 0.1)')
     parser.add_argument('--tmax',    type=float, default=10.0, help='탐색 최대 T (기본 10.0)')
-    parser.add_argument('--steps',   type=int,   default=100, help='탐색 단계 수 (기본 100)')
+    parser.add_argument('--steps',   type=int,   default=100,  help='탐색 단계 수 (기본 100)')
     args = parser.parse_args()
 
-    labels = [int(x) for x in args.labels.split(',')]
     exts   = ('.jpg', '.jpeg', '.png', '.bmp')
     images = sorted([
         os.path.join(args.folder, f)
@@ -159,24 +217,24 @@ if __name__ == '__main__':
         if f.lower().endswith(exts)
     ])
 
-    if len(images) != len(labels):
-        print(f"이미지 수({len(images)})와 라벨 수({len(labels)})가 다릅니다.")
-        print("이미지 순서:", [os.path.basename(p) for p in images])
+    if not images:
+        print(f"이미지 파일 없음: {args.folder}")
         exit(1)
-
-    print("이미지 순서 확인:")
-    for i, (p, l) in enumerate(zip(images, labels)):
-        print(f"  {os.path.basename(p)} → {CLASSES[l]} (label={l})")
 
     device    = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model     = load_model(args.version, device)
     transform = get_transforms('val')
 
+    # 라벨 파싱 (? 및 auto 지원)
+    labels = parse_labels(args.labels, images, model, device, transform)
+
     best_t = find_best_temperature(
         model, images, labels, device, transform,
         t_range=(args.tmin, args.tmax), steps=args.steps
     )
+
     print(f"\n{'='*50}")
     print(f" 권장 명령어:")
     print(f" python predict.py --folder {args.folder} --tta --temp {best_t:.2f}")
+    print(f" run.sh의 TEMP={best_t:.2f} 로 수정하세요.")
     print(f"{'='*50}")
