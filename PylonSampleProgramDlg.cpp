@@ -16,7 +16,6 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 	int nindex = 0;
 	int nCamIndex = *(int*)pParam;
 
-	// 프레임 측정을 위한 타이머 초기화
 	QueryPerformanceFrequency(&(pMainDlg->freq[nCamIndex]));
 	QueryPerformanceCounter(&(pMainDlg->start[nCamIndex]));
 	pMainDlg->nFrameCount[nCamIndex] = 0;
@@ -36,23 +35,25 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 				pMainDlg->nFrameCount[nCamIndex]++;
 				QueryPerformanceCounter(&(pMainDlg->end[nCamIndex]));
 
-				// [수정 지점] pImageColorDestBuffer가 NULL인지, nindex가 유효한지 철저히 검사
 				if (pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex] != NULL)
 				{
 					int nRoiSize = 260 * 260 * 3;
 
-					// 1. pImageColorDestBuffer[nCamIndex] 배열 자체가 할당되었는지 확인
-					// 2. nindex가 BUF_NUM 범위 내에 있는지 확인
-					// 3. 해당 칸의 메모리가 NULL이 아닌지 확인
 					if (pMainDlg->pImageColorDestBuffer[nCamIndex] != NULL &&
 						nindex >= 0 && nindex < BUF_NUM &&
 						pMainDlg->pImageColorDestBuffer[nCamIndex][nindex] != NULL)
 					{
+						// 1. 화면 출력용 버퍼 복사
 						memcpy(pMainDlg->pImageColorDestBuffer[nCamIndex][nindex],
 							pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex], nRoiSize);
 
+						// 2. [서버 전송] 전처리된 이미지와 JSON 정보를 서버로 전송
+						// 이 부분에서 기존에 구현하신 소켓 전송 함수를 호출하시면 됩니다.
+						// pMainDlg->SendImagePacket(nCamIndex, pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex], nRoiSize);
+
 						pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
 
+						// 3. 화면 Display
 						switch (nCamIndex)
 						{
 						case 0: pMainDlg->DisplayCam0(pMainDlg->pImageColorDestBuffer[0][nindex]); break;
@@ -63,7 +64,6 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 					}
 					else
 					{
-						// 버퍼가 준비되지 않았다면 상태만 초기화하고 넘어감
 						pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
 					}
 				}
@@ -71,6 +71,7 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 				nindex++;
 				if (nindex >= BUF_NUM) nindex = 0;
 
+				// FPS 계산 및 UI 업데이트
 				double dElapsed = (double)(pMainDlg->end[nCamIndex].QuadPart - pMainDlg->start[nCamIndex].QuadPart) / pMainDlg->freq[nCamIndex].QuadPart;
 				if (dElapsed > 1.0)
 				{
@@ -583,44 +584,41 @@ void CPylonSampleProgramDlg::OnBnClickedConnectCameraBtn()
 
 void CPylonSampleProgramDlg::OnBnClickedGrabSingleBtn()
 {
-	if (m_CameraManager.m_bCamConnectFlag[m_iCameraIndex] == true)
+	if (m_iCameraIndex < 0 || m_iCameraIndex >= CAM_NUM) return;
+	if (m_CameraManager.m_bCamConnectFlag[m_iCameraIndex] == false) return;
+
+	try
 	{
 		bLiveFlag[m_iCameraIndex] = false;
 
+		// 단일 촬영 실행
 		if (m_CameraManager.SingleGrab(m_iCameraIndex) == 0)
 		{
-			while (bLiveFlag[m_iCameraIndex] == false)
+			if (m_CameraManager.pImage24Buffer[m_iCameraIndex] != NULL)
 			{
-				if (m_CameraManager.CheckCaptureEnd(m_iCameraIndex))
+				if (pImageColorDestBuffer[m_iCameraIndex] != NULL && pImageColorDestBuffer[m_iCameraIndex][0] != NULL)
 				{
-					// [민기 파트] 전처리된 260x260 이미지 복사
-					if (m_CameraManager.pImage24Buffer[m_iCameraIndex] != NULL)
+					int nRoiSize = 260 * 260 * 3;
+					memcpy(pImageColorDestBuffer[m_iCameraIndex][0],
+						m_CameraManager.pImage24Buffer[m_iCameraIndex], nRoiSize);
+
+					switch (m_iCameraIndex)
 					{
-						// [안전장치] 만약 버퍼 할당이 안되어 있다면 여기서라도 수행
-						if (pImageColorDestBuffer[m_iCameraIndex] == NULL) {
-							AllocImageBuf();
-						}
-
-						int nRoiSize = 260 * 260 * 3;
-						// pImageColorDestBuffer가 NULL이 아니므로 더 이상 중단점이 걸리지 않습니다.
-						memcpy(pImageColorDestBuffer[m_iCameraIndex][0], m_CameraManager.pImage24Buffer[m_iCameraIndex], nRoiSize);
-
-						m_CameraManager.ReadEnd(m_iCameraIndex);
-
-						// 화면 출력
-						switch (m_iCameraIndex)
-						{
-						case 0: DisplayCam0(pImageColorDestBuffer[0][0]); break;
-						case 1: DisplayCam1(pImageColorDestBuffer[1][0]); break;
-						case 2: DisplayCam2(pImageColorDestBuffer[2][0]); break;
-						case 3: DisplayCam3(pImageColorDestBuffer[3][0]); break;
-						}
+					case 0: DisplayCam0(pImageColorDestBuffer[0][0]); break;
+					case 1: DisplayCam1(pImageColorDestBuffer[1][0]); break;
+					case 2: DisplayCam2(pImageColorDestBuffer[2][0]); break;
+					case 3: DisplayCam3(pImageColorDestBuffer[3][0]); break;
 					}
 
+					m_CameraManager.ReadEnd(m_iCameraIndex);
 					bLiveFlag[m_iCameraIndex] = true;
 				}
 			}
 		}
+	}
+	catch (...)
+	{
+		TRACE(_T("Unknown Exception in GrabSingle Button\n"));
 	}
 }
 
@@ -1060,17 +1058,46 @@ void CPylonSampleProgramDlg::OnBnClickedExitBtn()
 
 void CPylonSampleProgramDlg::OnBnClickedSaveImgBtn()
 {
-	CString t =_T("test1.bmp");
-    if(m_CameraManager.m_strCM_ImageForamt[m_iCameraIndex]=="Mono8")
+	// 1. 현재 선택된 카메라 인덱스 사용 (m_iCameraIndex)
+	int nCam = m_iCameraIndex;
+
+	// 2. 저장 경로 설정 및 폴더 생성 체크
+	// C:\Temp 폴더가 없으면 에러가 나므로, 직접 폴더를 생성하거나 확인해야 합니다.
+	CString strPath = _T("C:\\Temp");
+	if (!PathFileExists(strPath)) // #include <shlwapi.h> 필요 (프로젝트 설정에 따라 다름)
 	{
-		 //int nFileFormat(0 = bmp, 1=tiff, 2=jpeg, 3= png)
-		 //unsigned char* pImage, char *filename
-		 //int nPixelType( 0 = mono8 , 1= Color),int width, int height,int nColorband(1,3)		                                       
-		m_CameraManager.SaveImage(0,m_CameraManager.pImage8Buffer[m_iCameraIndex],CT2A(t),0,m_CameraManager.m_iCM_Width[m_iCameraIndex],m_CameraManager.m_iCM_Height[m_iCameraIndex],1);
+		CreateDirectory(strPath, NULL); // 폴더가 없으면 생성
+	}
+
+	// 파일명을 매번 다르게 저장할 수 있도록 시스템 시간 등을 섞어주면 좋습니다.
+	// 일단 테스트를 위해 고정 경로를 사용하되, char* 변환을 안전하게 수행합니다.
+	char szFileName[256];
+	sprintf_s(szFileName, "C:\\Temp\\MetalGuard_Cam%d.bmp", nCam);
+
+	// 3. 버퍼 체크 및 저장 호출
+	if (m_CameraManager.pImage24Buffer[nCam] != NULL)
+	{
+		int nResult = m_CameraManager.SaveImage(
+			0,                                      // 0: BMP 포맷
+			m_CameraManager.pImage24Buffer[nCam],    // 전처리된 260x260 BGR 버퍼
+			szFileName,                             // 저장 파일 풀 경로
+			1,                                      // 1: BGR 타입 (내부에서 고정하므로 의미는 적음)
+			260,                                    // Width
+			260,                                    // Height
+			3                                       // ColorBand (3채널)
+		);
+
+		if (nResult == 0) {
+			AfxMessageBox(_T("이미지 저장 성공! (C:\\Temp)"));
+		}
+		else {
+			// 실패 시 원인은 TRACE 창(출력 창)을 확인해야 함
+			AfxMessageBox(_T("이미지 저장 실패! 출력창의 RuntimeException 내용을 확인하세요."));
+		}
 	}
 	else
 	{
-		m_CameraManager.SaveImage(0,m_CameraManager.pImage24Buffer[m_iCameraIndex],CT2A(t),1,m_CameraManager.m_iCM_Width[m_iCameraIndex],m_CameraManager.m_iCM_Height[m_iCameraIndex],3);
+		AfxMessageBox(_T("저장할 이미지 버퍼가 비어있습니다. 먼저 촬영(Grab)을 진행하세요."));
 	}
 }
 

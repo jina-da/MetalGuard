@@ -2,6 +2,7 @@
 #include "CameraManager.h"
 #include <time.h>
 #include <opencv2/opencv.hpp>
+#include <json.hpp>
 
 
 #ifdef _DEBUG
@@ -203,7 +204,7 @@ int CCameraManager::Connect_Camera(int nCamIndex, int nOffsetX, int nOffsetY, in
 	try
 	{
 		m_pCamera[nCamIndex].MaxNumBuffer = BUF_NUM;
-		m_iCM_reSizeWidth[nCamIndex] = (((nWidth * 8) + 31) / 32 * 4);                 // width 4byte 배수계산
+		m_iCM_reSizeWidth[nCamIndex] = (((nWidth * 8) + 31) / 32 * 4);
 
 		// AOI 설정 
 		int nTemp;
@@ -239,21 +240,22 @@ int CCameraManager::Connect_Camera(int nCamIndex, int nOffsetX, int nOffsetY, in
 			m_iCM_OffsetY[nCamIndex] = nOffsetY;
 		}
 
-		// Image Format 설정  
 		SetEnumeration(nCamIndex, CT2A(strImgFormat), "PixelFormat");
 		m_strCM_ImageForamt[nCamIndex] = strImgFormat;
 
-		// [중요] OnImageGrabbed에서 260x260으로 리사이즈하므로 해당 크기로 할당
+		// 버퍼 할당 (260x260x3)
 		if (pImage24Buffer[nCamIndex] != NULL)
 		{
 			delete[] pImage24Buffer[nCamIndex];
 			pImage24Buffer[nCamIndex] = NULL;
 		}
 
-		size_t nBufferSize = 260 * 260 * 3; // BGR 3채널
+		size_t nBufferSize = 260 * 260 * 3;
 		pImage24Buffer[nCamIndex] = new unsigned char[nBufferSize];
 		memset(pImage24Buffer[nCamIndex], 0, nBufferSize);
 
+		// [신규] 서버 전송용 상태 초기화
+		// 실제 운용 시에는 이 값들을 외부에서 동적으로 받아올 수 있게 확장 가능합니다.
 		m_bCamConnectFlag[nCamIndex] = true;
 
 		return 0;
@@ -273,46 +275,57 @@ int CCameraManager::SingleGrab(int nCamIndex)
 {
 	try
 	{
-		
-			m_pCamera[ nCamIndex ].StartGrabbing(1,GrabStrategy_OneByOne, GrabLoop_ProvidedByInstantCamera); 
-			/*m_pCamera[ nCamIndex ].StartGrabbing(1);
-			
-             CGrabResultPtr ptrGrabResult;
-       
-            m_pCamera[nCamIndex].RetrieveResult( 5000, ptrGrabResult, TimeoutHandling_ThrowException);
-		    
-			if(m_strCM_ImageForamt[ptrGrabResult->GetCameraContext()]=="Mono8")
+		if (!m_pCamera[nCamIndex].IsPylonDeviceAttached()) return -1;
+
+		// 1. 이미 그랩 중(라이브)이라면 중단하지 말고 그대로 진행하거나
+		// 만약 정지 상태라면 1장만 찍도록 시작합니다.
+		if (!m_pCamera[nCamIndex].IsGrabbing())
+		{
+			m_pCamera[nCamIndex].StartGrabbing(1, GrabStrategy_LatestImageOnly);
+		}
+
+		CGrabResultPtr ptrGrabResult;
+		// 2. RetrieveResult를 통해 스트림 스레드를 파괴하지 않고 데이터만 채갑니다.
+		if (m_pCamera[nCamIndex].RetrieveResult(5000, ptrGrabResult, TimeoutHandling_ThrowException))
+		{
+			if (ptrGrabResult->GrabSucceeded())
 			{
-				converter[ptrGrabResult->GetCameraContext()].OutputPixelFormat = PixelType_Mono8;					
-				converter[ptrGrabResult->GetCameraContext()].Convert( pCameraManager->Image[ptrGrabResult->GetCameraContext()], ptrGrabResult);  					
-				pImage8Buffer[ptrGrabResult->GetCameraContext()] =(unsigned char*)Image[ptrGrabResult->GetCameraContext()].GetBuffer();
+				uint8_t* pBuffer = (uint8_t*)ptrGrabResult->GetBuffer();
+				int nW = (int)ptrGrabResult->GetWidth();
+				int nH = (int)ptrGrabResult->GetHeight();
+
+				cv::Mat matRaw = cv::Mat(nH, nW, CV_8UC1, pBuffer);
+
+				// 안전한 ROI 설정 (이전의 방어 코드 적용)
+				int startX = std::max(0, std::min(470, nW - 260));
+				int startY = std::max(0, std::min(270, nH - 260));
+				int targetW = std::min(1000, nW - startX);
+				int targetH = std::min(1000, nH - startY);
+
+				cv::Mat croppedImg = matRaw(cv::Rect(startX, startY, targetW, targetH)).clone();
+				cv::Mat finalImg;
+
+				cv::cvtColor(croppedImg, finalImg, cv::COLOR_GRAY2BGR);
+				cv::resize(finalImg, finalImg, cv::Size(260, 260));
+
+				if (pImage24Buffer[nCamIndex] != NULL)
+				{
+					memcpy(pImage24Buffer[nCamIndex], finalImg.data, 260 * 260 * 3);
+				}
+
+				m_bCaptureEnd[nCamIndex] = true;
+				return 0;
 			}
-			else  // Bayer  && YUV422Packed 
-			{
-                 
-				//converter[ptrGrabResult->GetCameraContext()].OutputPixelFormat = PixelType_BGR8packed;
-				//converter[ptrGrabResult->GetCameraContext()].Convert( pCameraManager->Image[ptrGrabResult->GetCameraContext()], ptrGrabResult);  					
-				//pImage24Buffer[ptrGrabResult->GetCameraContext()] =(unsigned char*)pCameraManager->Image[ptrGrabResult->GetCameraContext()].GetBuffer();
-				
-				
-				pImage8Buffer[ptrGrabResult->GetCameraContext()] =(unsigned char*)ptrGrabResult->GetBuffer();
-			   
-					
-			}
-            m_bCaptureEnd[ptrGrabResult->GetCameraContext()] = true;*/
-			return 0;   
+		}
+		return -2;
 	}
-    catch (GenICam::GenericException &e)
-    {
-			// Error handling
-			CString error =  (CString)e.GetDescription();
-			if(	bLogUse==true)
-			{
-				WriteLog(nCamIndex,_T("[ SingleGrab ]\n"),error);
-			}
-			return -2;
-    }
+	catch (const GenericException& e)
+	{
+		TRACE(_T("SingleGrab Final Exception: %S\n"), e.GetDescription());
+		return -3;
+	}
 }
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////    GrabLive
 int CCameraManager::GrabLive(int nCamIndex,int nMode)
 {
@@ -343,6 +356,7 @@ int CCameraManager::GrabLive(int nCamIndex,int nMode)
 			return -2;   
     }
 }
+
 UINT CCameraManager::LiveThread(void *lParam)
 {        
 	  CCameraManager* pDlg = (CCameraManager*)lParam;
@@ -830,38 +844,64 @@ int CCameraManager::SetCommand(int nCamIndex, char *szNodeName)
     }
 }
 
-int CCameraManager::SaveImage(int nFileFormat, unsigned char* pImage, char *filename,int nPixelType,int width, int height,int nColorband)
+int CCameraManager::SaveImage(int nFileFormat, unsigned char* pImage, char* filename, int nPixelType, int width, int height, int nColorband)
 {
-	EImageFileFormat ImageFileFormat;
-	switch(nFileFormat)
-	{
-	   case 0:
-		   ImageFileFormat = ImageFileFormat_Bmp;
-		   break;
-	   case 1:
-		   ImageFileFormat = ImageFileFormat_Tiff;
-		   break;
-	   case 2:
-		   ImageFileFormat = ImageFileFormat_Jpeg;
-		   break;
-	   case 3:
-		   ImageFileFormat = ImageFileFormat_Png;
-		   break;
-	}
-    EPixelType  ImagePixleType;
-	switch(nPixelType)
-	{
-	   case 0:
-		   ImagePixleType = PixelType_Mono8;
-		   break;
-	   case 1:
-		   ImagePixleType = PixelType_BGR8packed;
-		   break;
-
+	// 1. 기본 유효성 검사
+	if (pImage == NULL || filename == NULL) {
+		TRACE(_T("SaveImage Error: pImage or filename is NULL\n"));
+		return -1;
 	}
 
-	CImagePersistence::Save( ImageFileFormat,filename,pImage,width*height*nColorband,ImagePixleType,width,height,0,ImageOrientation_TopDown);
-	return 0;
+	try
+	{
+		// 2. 파일 포맷 설정
+		EImageFileFormat ImageFileFormat;
+		switch (nFileFormat)
+		{
+		case 0: ImageFileFormat = ImageFileFormat_Bmp; break;
+		case 1: ImageFileFormat = ImageFileFormat_Tiff; break;
+		case 2: ImageFileFormat = ImageFileFormat_Jpeg; break;
+		case 3: ImageFileFormat = ImageFileFormat_Png; break;
+		default: ImageFileFormat = ImageFileFormat_Bmp; break;
+		}
+
+		// 3. 픽셀 타입 및 규격 강제 동기화 (민기 파트 고정 규격)
+		// OnImageGrabbed 혹은 SingleGrab에서 260x260x3(BGR)으로 만들었으므로 이를 준수해야 함
+		EPixelType ImagePixleType = PixelType_BGR8packed;
+		int finalW = 260;
+		int finalH = 260;
+		int finalBand = 3;
+		size_t finalBufferSize = (size_t)finalW * finalH * finalBand;
+
+		// 4. Pylon 저장 함수 호출
+		// 여기서 예외가 난다면 100% 버퍼 크기 불일치 혹은 경로 문제입니다.
+		CImagePersistence::Save(
+			ImageFileFormat,
+			filename,
+			pImage,
+			finalBufferSize,
+			ImagePixleType,
+			finalW,
+			finalH,
+			0, // Padding
+			ImageOrientation_TopDown
+		);
+
+		TRACE(_T("SaveImage Success: %S\n"), filename);
+		return 0;
+	}
+	catch (const Pylon::GenericException& e)
+	{
+		// 디버그 출력 창에서 이 내용을 꼭 읽어보세요.
+		// "Directory not found" 인지 "Buffer too small" 인지 알려줍니다.
+		TRACE(_T("Pylon Save Runtime Error: %S\n"), e.GetDescription());
+		return -2;
+	}
+	catch (...)
+	{
+		TRACE(_T("SaveImage: Unknown Exception\n"));
+		return -3;
+	}
 }
 
 void CCameraManager::OnImagesSkipped( CInstantCamera& camera, size_t countOfSkippedImages)
@@ -944,6 +984,7 @@ bool CCameraManager::SendImageToServer(int nCamIndex, const cv::Mat& matEntry)
 
 void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr& ptrGrabResult)
 {
+	// 1. 유효성 검사
 	if (!ptrGrabResult.IsValid()) return;
 
 	int nCameraIndex = (int)ptrGrabResult->GetCameraContext();
@@ -953,47 +994,72 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 	{
 		if (ptrGrabResult->GrabSucceeded())
 		{
+			// 2. 원본 데이터 획득
 			uint8_t* pBuffer = (uint8_t*)ptrGrabResult->GetBuffer();
 			int nWidth = (int)ptrGrabResult->GetWidth();
 			int nHeight = (int)ptrGrabResult->GetHeight();
 
 			if (pBuffer == NULL || nWidth <= 0 || nHeight <= 0) return;
 
+			// 3. OpenCV 전처리 (Crop & Resize)
 			cv::Mat matRaw = cv::Mat(nHeight, nWidth, CV_8UC1, pBuffer);
 
-			// ROI 안전 계산
 			int startX = std::min(470, nWidth - 1);
 			int startY = std::min(270, nHeight - 1);
-			int targetW = 1000;
-			int targetH = 1000;
-
-			if (startX + targetW > nWidth) targetW = nWidth - startX;
-			if (startY + targetH > nHeight) targetH = nHeight - startY;
+			int targetW = std::min(1000, nWidth - startX);
+			int targetH = std::min(1000, nHeight - startY);
 
 			if (targetW > 0 && targetH > 0)
 			{
 				cv::Mat croppedImg = matRaw(cv::Rect(startX, startY, targetW, targetH)).clone();
 				cv::Mat finalImg;
 
-				if (!croppedImg.empty())
-				{
-					cv::cvtColor(croppedImg, finalImg, cv::COLOR_GRAY2BGR);
-					cv::resize(finalImg, finalImg, cv::Size(260, 260));
+				// 흑백 -> 컬러 변환 및 260x260 리사이즈
+				cv::cvtColor(croppedImg, finalImg, cv::COLOR_GRAY2BGR);
+				cv::resize(finalImg, finalImg, cv::Size(260, 260));
 
-					if (pImage24Buffer[nCameraIndex] != NULL && !finalImg.empty())
-					{
-						memcpy(pImage24Buffer[nCameraIndex], finalImg.data, 260 * 260 * 3);
-					}
+				// 전처리 이미지 버퍼 복사
+				if (pImage24Buffer[nCameraIndex] != NULL && !finalImg.empty())
+				{
+					memcpy(pImage24Buffer[nCameraIndex], finalImg.data, 260 * 260 * 3);
 				}
 			}
 
+			// 4. [핵심] 서버 요청 사항 반영된 JSON 바디 구성
+			// shot_index는 각 카메라 별로 1~4까지 순환하도록 관리
+			static int nShotIndex[CAM_NUM] = { 1, 1, 1, 1 };
+			int nTotalShots = 4;
+
+			// 현재 시간 획득 (YYYY-MM-DD HH:MM:SS)
+			CTime t = CTime::GetCurrentTime();
+			CString strTime;
+			strTime.Format(_T("%04d-%02d-%02d %02d:%02d:%02d"),
+				t.GetYear(), t.GetMonth(), t.GetDay(), t.GetHour(), t.GetMinute(), t.GetSecond());
+
+			// nlohmann/json 객체 생성
+			nlohmann::json j;
+			j["mode"] = "inspect";
+			j["plate_id"] = 1; // 필요 시 전역 변수나 UI 입력값으로 변경 가능
+			j["shot_index"] = nShotIndex[nCameraIndex];
+			j["total_shots"] = nTotalShots;
+			j["client_id"] = "cam_0" + std::to_string(nCameraIndex + 1); // cam_01, cam_02...
+			j["timestamp"] = (CT2A)strTime;
+
+			// 생성된 JSON 문자열을 멤버 변수나 별도 버퍼에 저장 (서버 전송용)
+			// 예: m_strJsonBody[nCameraIndex] = j.dump();
+
+			// 다음 촬영을 위해 shot_index 증가 (1~4 순환)
+			nShotIndex[nCameraIndex]++;
+			if (nShotIndex[nCameraIndex] > nTotalShots) nShotIndex[nCameraIndex] = 1;
+
+			// 5. 완료 상태 갱신
 			m_bCaptureEnd[nCameraIndex] = true;
 			m_iGrabbedFrame[nCameraIndex] = (int)ptrGrabResult->GetImageNumber();
 		}
 	}
 	catch (const cv::Exception& e)
 	{
-		TRACE(_T("OpenCV Error: %S\n"), e.what());
+		TRACE(_T("OpenCV Error in OnImageGrabbed: %S\n"), e.what());
 	}
 }
 
