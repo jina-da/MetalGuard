@@ -66,7 +66,7 @@ int main() {
         WSACleanup();
         return 1;
     }
-    std::cout << "Connected to MetalGuard Server (10.10.10.109:8000)." << std::endl;
+    std::cout << "Connected to MetalGuard Server." << std::endl;
 
     // 4. 패킷 수신 및 루프
     while (true) {
