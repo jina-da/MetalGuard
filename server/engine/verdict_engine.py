@@ -1,6 +1,16 @@
 """
 verdict_engine.py
 Queue에서 ImageTask를 꺼내 AI 추론 → 판정 → DB 저장 → MFC/아두이노 전송
+
+[철판 단위 종합 판정 흐름]
+1. 장별로 AI 추론 + DB 저장 (inspection_result)
+2. plate_id별로 결과 버퍼에 누적
+3. N장(total_shots) 다 모이면 종합 판정 → MFC/아두이노 전송
+
+[종합 판정 로직]
+- N장 중 FAIL 1개라도 있으면 → FAIL
+- 전부 PASS → PASS
+- FAIL 없고 UNCERTAIN 있으면 → UNCERTAIN
 """
 
 import logging
@@ -23,13 +33,48 @@ logger = logging.getLogger(__name__)
 # AI 응답 불량 확률 키 목록
 DEFECT_KEYS = ["prob_crack", "prob_hole", "prob_rust", "prob_scratch"]
 
-# 판정 결과 → 아두이노 시리얼 신호 매핑
-VERDICT_TO_SIGNAL = {
-    "PASS":      "PASS",
-    "FAIL":      "FAIL",
-    "UNCERTAIN": "UNCERTAIN",
-    "TIMEOUT":   "TIMEOUT",
-}
+
+class PlateBuffer:
+    """
+    철판 1개 분량의 추론 결과를 누적하는 버퍼.
+    plate_id별로 생성되어 _plate_buffer dict에 저장됨.
+    """
+    def __init__(self, plate_id: int, total_shots: int):
+        self.plate_id = plate_id
+        self.total_shots = total_shots                   # 수신 예정 총 장수
+        self.results: list[dict] = []                   # 장별 추론 결과 누적
+        self.verdicts: list[str] = []                   # 장별 판정 결과 누적
+        self.defect_classes: list[str] = []             # 장별 불량 클래스 누적
+        self.first_received_at: float = time.monotonic()  # 첫 장 수신 시점 (파이프라인 측정용)
+
+    def add(self, verdict: str, defect_class: str, ai_response: dict) -> None:
+        """장별 결과 추가."""
+        self.results.append(ai_response)
+        self.verdicts.append(verdict)
+        self.defect_classes.append(defect_class)
+
+    def is_complete(self) -> bool:
+        """N장이 모두 수신됐는지 확인."""
+        return len(self.results) >= self.total_shots
+
+    def get_final_verdict(self) -> tuple[str, str]:
+        """
+        종합 판정.
+        - FAIL 1개라도 있으면 → FAIL (가장 심한 불량 클래스 반환)
+        - FAIL 없고 UNCERTAIN 있으면 → UNCERTAIN
+        - 전부 PASS → PASS
+
+        Returns:
+            (final_verdict, final_defect_class)
+        """
+        if "FAIL" in self.verdicts:
+            # FAIL 중 가장 먼저 나온 불량 클래스 반환
+            fail_idx = self.verdicts.index("FAIL")
+            return "FAIL", self.defect_classes[fail_idx]
+        elif "UNCERTAIN" in self.verdicts:
+            return "UNCERTAIN", "unknown"
+        else:
+            return "PASS", "normal"
 
 
 class VerdictEngine:
@@ -57,6 +102,10 @@ class VerdictEngine:
         self._running = False
         self._thread: threading.Thread | None = None
         self._normal_count = 0  # 정상 건 샘플링 카운터 (100건당 1건 pipeline_log 저장)
+
+        # plate_id별 결과 버퍼 (plate_id → PlateBuffer)
+        self._plate_buffer: dict[int, PlateBuffer] = {}
+        self._plate_lock = threading.Lock()  # 멀티스레드 안전
 
     # ──────────────────────────────────────────────
     # 엔진 시작 / 정지
@@ -98,12 +147,13 @@ class VerdictEngine:
 
     def _process(self, task: ImageTask) -> None:
         """
-        단일 이미지 처리 파이프라인.
-        task.received_at 기준으로 전체 파이프라인 시간 측정 (목표: 150ms 이내).
+        단일 이미지 처리.
+        장별 AI 추론 + DB 저장 후 plate 버퍼에 누적.
+        N장 완료 시 종합 판정 → MFC/아두이노 전송.
         """
         verdict_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # 1. AI 추론 요청 (CmdID.INFER_REQ → CmdID.INFER_RES)
+        # 1. AI 추론 요청 (INFER_REQ → INFER_RES)
         ai_response = self._ai.infer(task.image_bytes, task.inspection_id)
 
         timeout_flag = ai_response is None
@@ -114,25 +164,27 @@ class VerdictEngine:
         # 2. AI 서버가 준 inference_ms 사용
         inference_ms: float = ai_response.get("inference_ms", 0.0)
 
-        # 3. 판정
+        # 3. 장별 판정
         verdict, defect_class = self._judge(ai_response)
 
-        # 4. 파이프라인 소요시간 (카메라 수신 시점 기준)
+        # 4. 장별 파이프라인 소요시간 (카메라 수신 시점 기준)
         pipeline_ms = (time.monotonic() - task.received_at) * 1000
-        if pipeline_ms > 150:
+        if pipeline_ms > config.PIPELINE_TIMEOUT_MS:
             logger.warning(
-                f"[VerdictEngine] 파이프라인 초과: {pipeline_ms:.1f}ms "
-                f"client={task.client_id}"
+                f"[VerdictEngine] 장별 파이프라인 초과: {pipeline_ms:.1f}ms "
+                f"shot={task.shot_index}/{task.total_shots} client={task.client_id}"
             )
 
-        # 5. 터미널 로그
+        # 5. 장별 터미널 로그
         logger.info(
-            f"[판정] {verdict_time} | {verdict} | defect={defect_class} | "
+            f"[장별판정] {verdict_time} | plate={task.plate_id} "
+            f"shot={task.shot_index}/{task.total_shots} | "
+            f"{verdict} | defect={defect_class} | "
             f"normal={ai_response.get('prob_normal', 0):.4f} | "
             f"inference={inference_ms:.1f}ms | pipeline={pipeline_ms:.1f}ms"
         )
 
-        # 6. DB 저장 (inspection_result)
+        # 6. 장별 DB 저장 (inspection_result)
         inspection_id = self._save_inspection(
             verdict, defect_class, ai_response,
             inference_ms, pipeline_ms, timeout_flag
@@ -142,13 +194,58 @@ class VerdictEngine:
         if inspection_id:
             self._save_pipeline_log(inspection_id, inference_ms, pipeline_ms, timeout_flag)
 
-        # 8. MFC 전송 (CmdID.RESULT_SEND: 301)
-        self._send_to_mfc(verdict, defect_class, verdict_time)
+        # 8. plate 버퍼에 누적 → N장 완료 시 종합 판정
+        # plate_id가 없으면 (구버전 호환) 즉시 전송
+        if task.plate_id is None:
+            self._send_to_mfc(verdict, defect_class, verdict_time)
+            arduino_verdict = "TIMEOUT" if timeout_flag else verdict
+            self._send_to_arduino(arduino_verdict)
+            return
 
-        # 9. 아두이노 전송
-        # 타임아웃이면 CmdID.VERDICT_TIMEOUT(204) → "T\n"
-        arduino_verdict = "TIMEOUT" if timeout_flag else verdict
-        self._send_to_arduino(arduino_verdict)
+        self._accumulate_and_finalize(task, verdict, defect_class, ai_response, timeout_flag)
+
+    def _accumulate_and_finalize(
+        self,
+        task: ImageTask,
+        verdict: str,
+        defect_class: str,
+        ai_response: dict,
+        timeout_flag: bool,
+    ) -> None:
+        """
+        plate 버퍼에 장별 결과 누적.
+        N장 완료 or 타임아웃 시 종합 판정 후 MFC/아두이노 전송.
+        """
+        with self._plate_lock:
+            plate_id = task.plate_id
+
+            # 버퍼 없으면 새로 생성
+            if plate_id not in self._plate_buffer:
+                self._plate_buffer[plate_id] = PlateBuffer(plate_id, task.total_shots)
+
+            buf = self._plate_buffer[plate_id]
+            buf.add(verdict, defect_class, ai_response)
+
+            # N장 완료 or 타임아웃 → 종합 판정
+            if buf.is_complete() or timeout_flag:
+                final_verdict, final_defect_class = buf.get_final_verdict()
+                verdict_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                logger.info(
+                    f"[종합판정] plate={plate_id} | {final_verdict} | "
+                    f"defect={final_defect_class} | "
+                    f"shots={len(buf.results)}/{buf.total_shots}"
+                )
+
+                # MFC 전송
+                self._send_to_mfc(final_verdict, final_defect_class, verdict_time)
+
+                # 아두이노 전송
+                arduino_verdict = "TIMEOUT" if timeout_flag else final_verdict
+                self._send_to_arduino(arduino_verdict)
+
+                # 버퍼 제거 (메모리 정리)
+                del self._plate_buffer[plate_id]
 
     # ──────────────────────────────────────────────
     # 판정 로직
@@ -156,7 +253,7 @@ class VerdictEngine:
 
     def _judge(self, ai_response: dict) -> tuple[str, str]:
         """
-        AI 응답 확률값으로 판정.
+        AI 응답 확률값으로 장별 판정.
 
         Returns:
             (verdict, defect_class)
@@ -218,7 +315,7 @@ class VerdictEngine:
         - 타임아웃 또는 150ms 초과 → 전수 저장
         - 정상 건 → 100건당 1건 샘플링
         """
-        force_save = timeout_flag or pipeline_ms > 150
+        force_save = timeout_flag or pipeline_ms > config.PIPELINE_TIMEOUT_MS
 
         if not force_save:
             self._normal_count += 1
@@ -244,7 +341,7 @@ class VerdictEngine:
     def _send_to_mfc(self, verdict: str, defect_class: str, verdict_time: str) -> None:
         """
         MFC로 판정 결과 전송.
-        config.SEND_RESULT_TO_MFC = False 이면 내부에서 스킵.
+        config.SEND_RESULT_TO_MFC = False 이면 스킵.
         MFC 미연결 시 조용히 스킵.
         """
         mfc_conn = self._get_mfc_conn()
@@ -271,4 +368,4 @@ class VerdictEngine:
             return
         ok = self._arduino.send_verdict(verdict)
         if not ok:
-            logger.warning(f"[VerdictEngine] 아두이노 전송 실패 : verdict={verdict}")
+            logger.warning(f"[VerdictEngine] 아두이노 전송 실패: verdict={verdict}")

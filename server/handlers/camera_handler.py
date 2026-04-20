@@ -12,7 +12,6 @@ import struct
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
 
 from constants import CmdID
 
@@ -27,8 +26,11 @@ class ImageTask:
     inspection_id: int | None  # 재분류 시 원본 판정 ID, 첫 분류는 None
     timestamp: str             # 카메라 촬영 타임스탬프
     client_id: str             # 카메라 클라이언트 ID
-    image_bytes: bytes         # 수신한 이미지 바이트 (260×260×3)
-    received_at: float = field(default_factory=time.monotonic)  # 파이프라인 시간 측정 기준
+    image_bytes: bytes         # 수신한 이미지 바이트
+    plate_id: int | None       # 철판 단위 ID (민기님 필드 추가 후 사용)
+    shot_index: int | None     # 현재 몇 번째 장인지 (1부터 시작)
+    total_shots: int | None    # 철판 1개당 총 촬영 장수
+    received_at: float = field(default_factory=time.monotonic)  # 파이프라인 시간 측정 기준 (default 있는 필드는 맨 뒤)
 
 
 class CameraHandler:
@@ -70,10 +72,14 @@ class CameraHandler:
             timestamp=body.get("timestamp", ""),
             client_id=body.get("client_id", "unknown"),
             image_bytes=image_bytes,
+            plate_id=body.get("plate_id"),        # 철판 ID (민기님 필드 추가 후 채워짐)
+            shot_index=body.get("shot_index"),    # 몇 번째 장인지
+            total_shots=body.get("total_shots"),  # 총 촬영 장수
         )
         self.image_queue.put(task)
         logger.info(
             f"[CameraHandler] Queue 적재: mode={task.mode} "
+            f"plate={task.plate_id} shot={task.shot_index}/{task.total_shots} "
             f"size={image_size}bytes client={task.client_id}"
         )
 
