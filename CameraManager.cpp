@@ -19,6 +19,11 @@ CCameraManager::CCameraManager(void)
 {
 	Pylon::PylonInitialize();
 
+	m_hSocket = INVALID_SOCKET;
+	m_bIsConnected = false;
+	m_serverIP = "10.10.10.109";
+	m_serverPort = 8000;
+
 	for (int i = 0; i < CAM_NUM; i++)
 	{
 		m_bCaptureEnd[i] = false;
@@ -26,18 +31,20 @@ CCameraManager::CCameraManager(void)
 		m_bCamConnectFlag[i] = false;
 		m_bCamOpenFlag[i] = false;
 		m_iGrabbedFrame[i] = 0;
-		m_iSkippiedFrame[i] = 0;
-		m_pCameraNodeMap[i] = NULL;
-
-		// [필수 추가] 포인터를 NULL로 초기화해야 delete 시 에러가 안 납니다.
 		pImage24Buffer[i] = NULL;
 	}
-	m_imgNjm = 0;
-	bLogUse = false;
 }
 
 CCameraManager::~CCameraManager(void)
 {
+	for (int i = 0; i < CAM_NUM; i++)
+	{
+		if (pImage24Buffer[i] != NULL)
+		{
+			delete[] pImage24Buffer[i];
+			pImage24Buffer[i] = NULL;
+		}
+	}
 	Pylon::PylonTerminate();
 }
 
@@ -236,19 +243,16 @@ int CCameraManager::Connect_Camera(int nCamIndex, int nOffsetX, int nOffsetY, in
 		SetEnumeration(nCamIndex, CT2A(strImgFormat), "PixelFormat");
 		m_strCM_ImageForamt[nCamIndex] = strImgFormat;
 
-		// [민기 파트 핵심 추가] 24비트 이미지 버퍼 메모리 할당
-		// OnImageGrabbed에서 memset/memcpy 시 중단점이 발생하는 것을 방지합니다.
+		// [중요] OnImageGrabbed에서 260x260으로 리사이즈하므로 해당 크기로 할당
 		if (pImage24Buffer[nCamIndex] != NULL)
 		{
 			delete[] pImage24Buffer[nCamIndex];
 			pImage24Buffer[nCamIndex] = NULL;
 		}
 
-		// 3채널(RGB) 이미지이므로 가로 * 세로 * 3 크기만큼 할당
-		pImage24Buffer[nCamIndex] = new unsigned char[(size_t)nWidth * nHeight * 3];
-
-		// 할당된 메모리를 안전하게 0으로 초기화
-		memset(pImage24Buffer[nCamIndex], 0, (size_t)nWidth * nHeight * 3);
+		size_t nBufferSize = 260 * 260 * 3; // BGR 3채널
+		pImage24Buffer[nCamIndex] = new unsigned char[nBufferSize];
+		memset(pImage24Buffer[nCamIndex], 0, nBufferSize);
 
 		m_bCamConnectFlag[nCamIndex] = true;
 
@@ -263,6 +267,7 @@ int CCameraManager::Connect_Camera(int nCamIndex, int nOffsetX, int nOffsetY, in
 		return -1;
 	}
 }
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////   SingleGrab
 int CCameraManager::SingleGrab(int nCamIndex)
 {
@@ -870,43 +875,115 @@ void CCameraManager::OnImagesSkipped( CInstantCamera& camera, size_t countOfSkip
 	 }
 }
 
+bool CCameraManager::ConnectToServer(std::string ip, int port)
+{
+	WSADATA wsaData;
+	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return false;
+
+	m_hSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (m_hSocket == INVALID_SOCKET) return false;
+
+	sockaddr_in serverAddr;
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_port = htons(port);
+	inet_pton(AF_INET, ip.c_str(), &serverAddr.sin_addr);
+
+	if (connect(m_hSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+		closesocket(m_hSocket);
+		m_bIsConnected = false;
+		return false;
+	}
+
+	m_bIsConnected = true;
+	return true;
+}
+
+void CCameraManager::DisconnectFromServer()
+{
+	if (m_hSocket != INVALID_SOCKET) {
+		closesocket(m_hSocket);
+		WSACleanup();
+	}
+	m_bIsConnected = false;
+}
+
+bool CCameraManager::SendImageToServer(int nCamIndex, const cv::Mat& matEntry)
+{
+	// C2597 에러 방지: 멤버 변수 사용 시 클래스 내부 함수임을 명시 (이미 되어 있음)
+	if (!m_bIsConnected || matEntry.empty()) return false;
+
+	try {
+		// 1. 이미지 JPG 인코딩
+		std::vector<uchar> buf;
+		std::vector<int> params = { cv::IMWRITE_JPEG_QUALITY, 90 };
+		cv::imencode(".jpg", matEntry, buf, params);
+
+		// 2. JSON 바디 생성
+		std::string jsonBody = "{ \"cam_id\": " + std::to_string(nCamIndex) + " }";
+
+		// 3. 헤더 구성 (Big-endian)
+		PacketHeader header;
+		header.signature = htons(0x4D47);
+		header.cmdId = htons(static_cast<uint16_t>(CmdID::IMG_SEND));
+		header.bodySize = htonl((uint32_t)jsonBody.size());
+
+		uint32_t imageSize = htonl((uint32_t)buf.size());
+
+		// 4. 전송
+		send(m_hSocket, (char*)&header, sizeof(header), 0);
+		send(m_hSocket, jsonBody.c_str(), (int)jsonBody.size(), 0);
+		send(m_hSocket, (char*)&imageSize, sizeof(imageSize), 0);
+		send(m_hSocket, (char*)buf.data(), (int)buf.size(), 0);
+
+		return true;
+	}
+	catch (...) {
+		return false;
+	}
+}
+
 void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr& ptrGrabResult)
 {
+	if (!ptrGrabResult.IsValid()) return;
+
+	int nCameraIndex = (int)ptrGrabResult->GetCameraContext();
+	if (nCameraIndex < 0 || nCameraIndex >= CAM_NUM) return;
+
 	try
 	{
 		if (ptrGrabResult->GrabSucceeded())
 		{
-			int nCameraIndex = (int)ptrGrabResult->GetCameraContext();
+			uint8_t* pBuffer = (uint8_t*)ptrGrabResult->GetBuffer();
+			int nWidth = (int)ptrGrabResult->GetWidth();
+			int nHeight = (int)ptrGrabResult->GetHeight();
 
-			// 1. Pylon 버퍼 -> OpenCV Mat (원본 해상도)
-			int width = (int)ptrGrabResult->GetWidth();
-			int height = (int)ptrGrabResult->GetHeight();
-			cv::Mat matRaw(height, width, CV_8UC1, (uint8_t*)ptrGrabResult->GetBuffer());
+			if (pBuffer == NULL || nWidth <= 0 || nHeight <= 0) return;
 
-			if (!matRaw.empty())
+			cv::Mat matRaw = cv::Mat(nHeight, nWidth, CV_8UC1, pBuffer);
+
+			// ROI 안전 계산
+			int startX = std::min(470, nWidth - 1);
+			int startY = std::min(270, nHeight - 1);
+			int targetW = 1000;
+			int targetH = 1000;
+
+			if (startX + targetW > nWidth) targetW = nWidth - startX;
+			if (startY + targetH > nHeight) targetH = nHeight - startY;
+
+			if (targetW > 0 && targetH > 0)
 			{
-				// 2. ROI 설정 (중앙 260x260 크롭)
-				int roiW = 260;
-				int roiH = 260;
-				int startX = (matRaw.cols - roiW) / 2;
-				int startY = (matRaw.rows - roiH) / 2;
+				cv::Mat croppedImg = matRaw(cv::Rect(startX, startY, targetW, targetH)).clone();
+				cv::Mat finalImg;
 
-				if (startX >= 0 && startY >= 0 && matRaw.cols >= roiW && matRaw.rows >= roiH)
+				if (!croppedImg.empty())
 				{
-					cv::Rect roiRect(startX, startY, roiW, roiH);
-
-					// 3. 전처리: 크롭 후 3채널(BGR)로 변환
-					cv::Mat croppedImg = matRaw(roiRect).clone();
-					cv::Mat finalImg;
 					cv::cvtColor(croppedImg, finalImg, cv::COLOR_GRAY2BGR);
+					cv::resize(finalImg, finalImg, cv::Size(260, 260));
 
-					// 4. 전처리된 이미지를 관리 버퍼에 복사 (260x260x3)
-					if (pImage24Buffer[nCameraIndex] != NULL)
+					if (pImage24Buffer[nCameraIndex] != NULL && !finalImg.empty())
 					{
-						size_t nCopySize = (size_t)finalImg.total() * finalImg.elemSize();
-						memcpy(pImage24Buffer[nCameraIndex], finalImg.data, nCopySize);
+						memcpy(pImage24Buffer[nCameraIndex], finalImg.data, 260 * 260 * 3);
 					}
-					// ** cv::imshow는 스레드 충돌 방지를 위해 제거됨 **
 				}
 			}
 
@@ -914,9 +991,9 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 			m_iGrabbedFrame[nCameraIndex] = (int)ptrGrabResult->GetImageNumber();
 		}
 	}
-	catch (const std::exception& e)
+	catch (const cv::Exception& e)
 	{
-		TRACE(_T("OnImageGrabbed Error: %S\n"), e.what());
+		TRACE(_T("OpenCV Error: %S\n"), e.what());
 	}
 }
 

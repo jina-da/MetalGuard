@@ -16,112 +16,75 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 	int nindex = 0;
 	int nCamIndex = *(int*)pParam;
 
+	// 프레임 측정을 위한 타이머 초기화
+	QueryPerformanceFrequency(&(pMainDlg->freq[nCamIndex]));
 	QueryPerformanceCounter(&(pMainDlg->start[nCamIndex]));
 	pMainDlg->nFrameCount[nCamIndex] = 0;
 	CString Info;
 
 	while (pMainDlg->bStopThread[nCamIndex] == true)
 	{
-		// 1. 카메라 연결 해제 체크 (기존 로직 유지)
 		if (pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] == true)
 		{
-			if (pMainDlg->m_strCamSerial[nCamIndex] == pMainDlg->m_ctrlCamList.GetItemText(0, 2))
-			{
-				pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] = false;
-				pMainDlg->m_ctrlCamList.SetItemText(0, 3, _T("LostConnection"));
-			}
-			else if (pMainDlg->m_strCamSerial[nCamIndex] == pMainDlg->m_ctrlCamList.GetItemText(1, 2))
-			{
-				pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] = false;
-				pMainDlg->m_ctrlCamList.SetItemText(1, 3, _T("LostConnection"));
-			}
+			pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] = false;
+			pMainDlg->m_ctrlCamList.SetItemText(nCamIndex, 3, _T("LostConnection"));
 		}
 		else
 		{
-			// 2. 이미지 획득 완료 체크
 			if (pMainDlg->m_CameraManager.CheckCaptureEnd(nCamIndex))
 			{
 				pMainDlg->nFrameCount[nCamIndex]++;
 				QueryPerformanceCounter(&(pMainDlg->end[nCamIndex]));
 
-				// [민기 파트 수정 시작]
-				// 현재 Mono8 모드이지만, 전처리 결과는 3채널 BGR이므로 Color 버퍼에 복사합니다.
-				if (pMainDlg->m_CameraManager.m_strCM_ImageForamt[nCamIndex] == "Mono8")
+				// [수정 지점] pImageColorDestBuffer가 NULL인지, nindex가 유효한지 철저히 검사
+				if (pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex] != NULL)
 				{
-					// [핵심] 기존의 전체 해상도 for문 memcpy를 지우고, 전처리된 260x260x3 데이터를 복사합니다.
-					if (pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex] != NULL)
+					int nRoiSize = 260 * 260 * 3;
+
+					// 1. pImageColorDestBuffer[nCamIndex] 배열 자체가 할당되었는지 확인
+					// 2. nindex가 BUF_NUM 범위 내에 있는지 확인
+					// 3. 해당 칸의 메모리가 NULL이 아닌지 확인
+					if (pMainDlg->pImageColorDestBuffer[nCamIndex] != NULL &&
+						nindex >= 0 && nindex < BUF_NUM &&
+						pMainDlg->pImageColorDestBuffer[nCamIndex][nindex] != NULL)
 					{
-						int nRoiSize = 260 * 260 * 3;
 						memcpy(pMainDlg->pImageColorDestBuffer[nCamIndex][nindex],
 							pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex], nRoiSize);
-					}
 
-					pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
+						pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
 
-					// 화면 출력 (민기 님이 고친 260x260 전용 DisplayCam 호출)
-					switch (nCamIndex)
-					{
-					case 0: pMainDlg->DisplayCam0(pMainDlg->pImageColorDestBuffer[0][nindex]); break;
-					case 1: pMainDlg->DisplayCam1(pMainDlg->pImageColorDestBuffer[1][nindex]); break;
-					case 2: pMainDlg->DisplayCam2(pMainDlg->pImageColorDestBuffer[2][nindex]); break;
-					case 3: pMainDlg->DisplayCam3(pMainDlg->pImageColorDestBuffer[3][nindex]); break;
-					}
-				}
-				// [민기 파트 수정 끝]
-				else if (pMainDlg->m_CameraManager.m_strCM_ImageForamt[nCamIndex] == "Mono12" || pMainDlg->m_CameraManager.m_strCM_ImageForamt[nCamIndex] == "Mono16")
-				{
-					// Mono12/16 로직은 기존 그대로 유지 (필요시 위와 동일하게 수정 가능)
-					int height = pMainDlg->m_CameraManager.m_iCM_Height[nCamIndex];
-					int width = pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex];
-					for (int y = 0; y < height; y++)
-					{
-						for (int x = 0; x < width; x++)
+						switch (nCamIndex)
 						{
-							pMainDlg->pImageresizeOrgBuffer[nCamIndex][nindex][y * width + x] = (pMainDlg->m_CameraManager.pImage12Buffer[nCamIndex][y * pMainDlg->m_CameraManager.m_iCM_Width[nCamIndex] + x] / 16);
+						case 0: pMainDlg->DisplayCam0(pMainDlg->pImageColorDestBuffer[0][nindex]); break;
+						case 1: pMainDlg->DisplayCam1(pMainDlg->pImageColorDestBuffer[1][nindex]); break;
+						case 2: pMainDlg->DisplayCam2(pMainDlg->pImageColorDestBuffer[2][nindex]); break;
+						case 3: pMainDlg->DisplayCam3(pMainDlg->pImageColorDestBuffer[3][nindex]); break;
 						}
 					}
-					pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
-					switch (nCamIndex)
+					else
 					{
-					case 0: pMainDlg->DisplayCam0(pMainDlg->pImageresizeOrgBuffer[0][nindex]); break;
-					case 1: pMainDlg->DisplayCam1(pMainDlg->pImageresizeOrgBuffer[1][nindex]); break;
-					case 2: pMainDlg->DisplayCam2(pMainDlg->pImageresizeOrgBuffer[2][nindex]); break;
-					case 3: pMainDlg->DisplayCam3(pMainDlg->pImageresizeOrgBuffer[3][nindex]); break;
-					}
-				}
-				else // bayer color & YUV422
-				{
-					// 이 부분도 260x260 전처리를 쓴다면 아래와 같이 수정
-					int nRoiSize = 260 * 260 * 3;
-					memcpy(pMainDlg->pImageColorDestBuffer[nCamIndex][nindex], pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex], nRoiSize);
-					pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
-					switch (nCamIndex)
-					{
-					case 0: pMainDlg->DisplayCam0(pMainDlg->pImageColorDestBuffer[0][nindex]); break;
-					case 1: pMainDlg->DisplayCam1(pMainDlg->pImageColorDestBuffer[1][nindex]); break;
-					case 2: pMainDlg->DisplayCam2(pMainDlg->pImageColorDestBuffer[2][nindex]); break;
-					case 3: pMainDlg->DisplayCam3(pMainDlg->pImageColorDestBuffer[3][nindex]); break;
+						// 버퍼가 준비되지 않았다면 상태만 초기화하고 넘어감
+						pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
 					}
 				}
 
 				nindex++;
-				if (nindex == BUF_NUM) nindex = 0;
+				if (nindex >= BUF_NUM) nindex = 0;
 
-				// 3. FPS 계산 및 정보 출력 (기존 로직 유지)
-				if (pMainDlg->end[nCamIndex].QuadPart / (pMainDlg->freq[nCamIndex].QuadPart / 1000.0) > pMainDlg->start[nCamIndex].QuadPart / (pMainDlg->freq[nCamIndex].QuadPart / 1000.0) + 1000)
+				double dElapsed = (double)(pMainDlg->end[nCamIndex].QuadPart - pMainDlg->start[nCamIndex].QuadPart) / pMainDlg->freq[nCamIndex].QuadPart;
+				if (dElapsed > 1.0)
 				{
 					CString temp;
 					temp.Format(_T("%d fps"), pMainDlg->nFrameCount[nCamIndex]);
-					if (nCamIndex == 0) pMainDlg->SetDlgItemText(IDC_CAMERA0_STATS, temp);
-					else if (nCamIndex == 1) pMainDlg->SetDlgItemText(IDC_CAMERA1_STATS, temp);
-					else if (nCamIndex == 2) pMainDlg->SetDlgItemText(IDC_CAMERA2_STATS, temp);
-					else if (nCamIndex == 3) pMainDlg->SetDlgItemText(IDC_CAMERA3_STATS, temp);
-
+					pMainDlg->SetDlgItemText(IDC_CAMERA0_STATS + nCamIndex, temp);
 					pMainDlg->nFrameCount[nCamIndex] = 0;
 					QueryPerformanceCounter(&(pMainDlg->start[nCamIndex]));
 				}
 
-				Info.Format(_T("Grabbed Frame = %d , SkippedFrame = %d"), pMainDlg->m_CameraManager.m_iGrabbedFrame[nCamIndex], pMainDlg->m_CameraManager.m_iSkippiedFrame[nCamIndex]);
+				Info.Format(_T("Grabbed Frame = %d , SkippedFrame = %d"),
+					pMainDlg->m_CameraManager.m_iGrabbedFrame[nCamIndex],
+					pMainDlg->m_CameraManager.m_iSkippiedFrame[nCamIndex]);
+
 				switch (nCamIndex)
 				{
 				case 0: pMainDlg->SetDlgItemText(IDC_CAM0_INFO, Info); break;
@@ -131,13 +94,12 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 				}
 			}
 		}
-		Sleep(1); // 루프가 너무 빠르면 CPU 점유율이 올라가므로 추가 권장
+		Sleep(1);
 	}
 	return 0;
 }
 
 // 응용 프로그램 정보에 사용되는 CAboutDlg 대화 상자입니다.
-
 class CAboutDlg : public CDialog
 {
 public:
@@ -238,54 +200,78 @@ BOOL CPylonSampleProgramDlg::OnInitDialog()
 {
 	CDialog::OnInitDialog();
 
-	// 시스템 메뉴에 "정보..." 메뉴 항목을 추가합니다.
-
-	// IDM_ABOUTBOX는 시스템 명령 범위에 있어야 합니다.
+	// 시스템 메뉴 및 아이콘 설정 (기존 로직)
 	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
 	ASSERT(IDM_ABOUTBOX < 0xF000);
-
 	CMenu* pSysMenu = GetSystemMenu(FALSE);
 	if (pSysMenu != NULL)
 	{
 		CString strAboutMenu;
 		strAboutMenu.LoadString(IDS_ABOUTBOX);
-		if (!strAboutMenu.IsEmpty())
-		{
+		if (!strAboutMenu.IsEmpty()) {
 			pSysMenu->AppendMenu(MF_SEPARATOR);
 			pSysMenu->AppendMenu(MF_STRING, IDM_ABOUTBOX, strAboutMenu);
 		}
 	}
+	SetIcon(m_hIcon, TRUE);
+	SetIcon(m_hIcon, FALSE);
 
-	// 이 대화 상자의 아이콘을 설정합니다. 응용 프로그램의 주 창이 대화 상자가 아닐 경우에는
-	//  프레임워크가 이 작업을 자동으로 수행합니다.
-	SetIcon(m_hIcon, TRUE);			// 큰 아이콘을 설정합니다.
-	SetIcon(m_hIcon, FALSE);		// 작은 아이콘을 설정합니다.
-
-	// TODO: 여기에 추가 초기화 작업을 추가합니다.
-    m_ctrlCamList.InsertColumn(0, _T("모델명") ,LVCFMT_CENTER,130,-1);
-	m_ctrlCamList.InsertColumn(1, _T("Position") ,LVCFMT_CENTER,80,-1);
-	m_ctrlCamList.InsertColumn(2, _T("SerialNum") ,LVCFMT_CENTER,90,-1);
-	m_ctrlCamList.InsertColumn(3, _T("Stats") ,LVCFMT_CENTER,150,-1);
-	m_ctrlCamList.SetExtendedStyle(	//DWORD SetExtendedStyle( DWORD dwNewStyle );
-		LVS_EX_FULLROWSELECT |		// 아이템 선택시 전체행 선택
-		LVS_EX_GRIDLINES |			// 그리드라인
-		LVS_EX_ONECLICKACTIVATE |	// 핫트래킹 Or 클릭으로 아이템 선택
-		LVS_EX_HEADERDRAGDROP 
-		);			
+	// --- 1. 리스트 컨트롤 초기화 ---
+	m_ctrlCamList.InsertColumn(0, _T("모델명"), LVCFMT_CENTER, 130, -1);
+	m_ctrlCamList.InsertColumn(1, _T("Position"), LVCFMT_CENTER, 80, -1);
+	m_ctrlCamList.InsertColumn(2, _T("SerialNum"), LVCFMT_CENTER, 90, -1);
+	m_ctrlCamList.InsertColumn(3, _T("Stats"), LVCFMT_CENTER, 150, -1);
+	m_ctrlCamList.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_ONECLICKACTIVATE | LVS_EX_HEADERDRAGDROP);
 
 	pMainDlg = this;
 
+	// --- 2. [핵심 수정] 이미지 버퍼(pImageColorDestBuffer) 메모리 할당 ---
+	// 이 부분이 누락되어 스레드에서 예외가 발생했던 것입니다.
+	for (int i = 0; i < CAM_NUM; i++)
+	{
+		// 1단계: 각 카메라당 BUF_NUM(3)개의 포인터를 담을 배열 할당
+		pImageColorDestBuffer[i] = new unsigned char* [BUF_NUM];
 
-    
-	//GetDlgItem(IDC_CAM0_DISPLAY)->GetClientRect( &rectStaticClient[0] );
-	//rectStaticClient[0].NormalizeRect();
- //   GetDlgItem(IDC_CAM0_DISPLAY)->ClientToScreen( &rectStaticClient[0] );
+		for (int j = 0; j < BUF_NUM; j++)
+		{
+			// 2단계: 각 프레임이 저장될 실제 메모리 할당 (260x260x3 BGR)
+			size_t nFrameSize = 260 * 260 * 3;
+			pImageColorDestBuffer[i][j] = new unsigned char[nFrameSize];
+			memset(pImageColorDestBuffer[i][j], 0, nFrameSize); // 0으로 초기화
+		}
+	}
 
-	//GetDlgItem(IDC_CAM1_DISPLAY)->GetClientRect( &rectStaticClient[1] );
-	//rectStaticClient[1].NormalizeRect();
- //   GetDlgItem(IDC_CAM1_DISPLAY)->ClientToScreen( &rectStaticClient[1] );
+	// --- 3. 화면 출력용 HDC 및 영역 초기화 ---
+	UINT nStaticIDs[] = { IDC_CAM0_DISPLAY, IDC_CAM1_DISPLAY, IDC_CAM2_DISPLAY, IDC_CAM3_DISPLAY };
 
-	return TRUE;  // 포커스를 컨트롤에 설정하지 않으면 TRUE를 반환합니다.
+	for (int i = 0; i < CAM_NUM; i++)
+	{
+		CWnd* pWnd = GetDlgItem(nStaticIDs[i]);
+		if (pWnd)
+		{
+			// 출력할 영역(Rect) 가져오기
+			pWnd->GetClientRect(&rectStaticClient[i]);
+			// 그리기 핸들(HDC) 가져오기
+			hdc[i] = pWnd->GetDC()->GetSafeHdc();
+		}
+
+		// 비트맵 정보 메모리 할당 (24비트 컬러 기준)
+		if (bitmapinfo[i] == NULL)
+		{
+			bitmapinfo[i] = (BITMAPINFO*)new BYTE[sizeof(BITMAPINFO)];
+			memset(bitmapinfo[i], 0, sizeof(BITMAPINFO));
+
+			// Bitmap Header 설정 (260x260, 24bit 고정)
+			bitmapinfo[i]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+			bitmapinfo[i]->bmiHeader.biWidth = 260;
+			bitmapinfo[i]->bmiHeader.biHeight = -260; // Top-down 방식
+			bitmapinfo[i]->bmiHeader.biPlanes = 1;
+			bitmapinfo[i]->bmiHeader.biBitCount = 24;
+			bitmapinfo[i]->bmiHeader.biCompression = BI_RGB;
+		}
+	}
+
+	return TRUE;
 }
 
 void CPylonSampleProgramDlg::OnSysCommand(UINT nID, LPARAM lParam)
@@ -552,31 +538,46 @@ void CPylonSampleProgramDlg::OnBnClickedCloseCamBtn()
 
 void CPylonSampleProgramDlg::OnBnClickedConnectCameraBtn()
 {
-	//m_CameraManager.m_iCM_Width[m_iCameraIndex] = 1292;
-	//m_CameraManager.m_iCM_Height[m_iCameraIndex] = 964;
-	//m_CameraManager.m_strCM_ImageForamt[m_iCameraIndex] = _T("Mono8") ;  //BayerBG8   YUV422Packed  Mono8
+	// 1. 리스트 컨트롤이 유효한지 확인 (Assertion 방지)
+	if (!m_ctrlCamList.GetSafeHwnd()) {
+		return;
+	}
 
+	// 2. 선택된 아이템이 있는지 확인
+	int nIndex = m_ctrlCamList.GetNextItem(-1, LVNI_SELECTED);
+	if (nIndex < 0 || nIndex >= CAM_NUM) {
+		AfxMessageBox(_T("연결할 카메라를 리스트에서 선택해 주세요."));
+		return;
+	}
 
-// 	m_CameraManager.SetInteger(m_iCameraIndex,1500,"GevSCPSPacketSize");
+	m_iCameraIndex = nIndex;
 
-   	if(m_CameraManager.m_bCamOpenFlag[m_iCameraIndex] == true)
-	{ 
-		//if(m_iCameraIndex==0)
-		//{
-			if(m_CameraManager.Connect_Camera(m_iCameraIndex,0,0,1984,1264,_T("Mono8"))==0)    //BayerBG8   YUV422Packed  Mono8 , Mono16
-			{
-				m_ctrlCamList.SetItemText(m_iListIndex,3,_T("Connect_Success"));
-				AllocImageBuf();
-				InitBitmap(m_iCameraIndex);
-			}
-			else
-			{
-				m_ctrlCamList.SetItemText(m_iListIndex,3,_T("Connect_Fail"));
-			}
+	// 3. 카메라 연결 시도
+	// 인자값들이 기존에 사용하던 설정값과 맞는지 확인하세요.
+	int nRet = m_CameraManager.Connect_Camera(m_iCameraIndex, 0, 0, 0, 0, _T("Mono8"));
+
+	if (nRet == 0) // 카메라 연결 성공 시
+	{
+		m_ctrlCamList.SetItemText(m_iCameraIndex, 3, _T("Connected"));
+
+		// 4. AI 서버 접속 시도 (연결 유지 방식)
+		std::string serverIP = "10.10.10.109";
+		int serverPort = 8000;
+
+		if (m_CameraManager.ConnectToServer(serverIP, serverPort))
+		{
+			TRACE(_T("AI Server Connected: %S:%d\n"), serverIP.c_str(), serverPort);
+		}
+		else
+		{
+			// 서버가 꺼져있어도 프로그램이 꺼지면 안 되므로 경고만 표시
+			TRACE(_T("AI Server Connection Failed. Check Network.\n"));
+		}
 	}
 	else
 	{
-		AfxMessageBox(_T("사용할 카메라 Open을 하세요!!"));
+		m_ctrlCamList.SetItemText(m_iCameraIndex, 3, _T("Connection Fail"));
+		AfxMessageBox(_T("카메라 연결에 실패했습니다."));
 	}
 }
 
@@ -745,77 +746,108 @@ void CPylonSampleProgramDlg::InitBitmap(int nCamIndex)
 
 void CPylonSampleProgramDlg::DisplayCam0(void* pImageBuf)
 {
-	if (pImageBuf == NULL) return;
-	// 비트맵 헤더 정보 갱신 (260x260, 24bit)
+	if (pImageBuf == NULL || hdc[0] == NULL) return;
+
+	// 24비트 BGR 이미지에 맞게 헤더 재설정
+	bitmapinfo[0]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 	bitmapinfo[0]->bmiHeader.biWidth = 260;
-	bitmapinfo[0]->bmiHeader.biHeight = -260; // 음수여야 이미지가 뒤집히지 않음
-	bitmapinfo[0]->bmiHeader.biBitCount = 24;
+	bitmapinfo[0]->bmiHeader.biHeight = -260; // Top-down
+	bitmapinfo[0]->bmiHeader.biPlanes = 1;
+	bitmapinfo[0]->bmiHeader.biBitCount = 24; // 3채널 컬러
+	bitmapinfo[0]->bmiHeader.biCompression = BI_RGB;
+	bitmapinfo[0]->bmiHeader.biSizeImage = 260 * 260 * 3;
+	bitmapinfo[0]->bmiHeader.biClrUsed = 0;
 
 	SetStretchBltMode(hdc[0], COLORONCOLOR);
-	StretchDIBits(hdc[0], 0, 0, rectStaticClient[0].Width(), rectStaticClient[0].Height(),
-		0, 0, 260, 260, // 원본 이미지의 가로세로를 260으로 명시
-		pImageBuf, bitmapinfo[0], DIB_RGB_COLORS, SRCCOPY);
+
+	int nRet = StretchDIBits(hdc[0],
+		0, 0, rectStaticClient[0].Width(), rectStaticClient[0].Height(),
+		0, 0, 260, 260,
+		pImageBuf,
+		bitmapinfo[0],
+		DIB_RGB_COLORS,
+		SRCCOPY);
+
+	if (nRet == GDI_ERROR) {
+		TRACE(_T("Cam0 Display Error!\n"));
+	}
 }
 
-// 나머지 DisplayCam1, 2, 3도 동일한 방식으로 260, 260으로 수정하세요.
+// 1, 2, 3번 카메라도 동일한 로직으로 수정 (생략 없이 적용하세요)
 void CPylonSampleProgramDlg::DisplayCam1(void* pImageBuf)
 {
-	if (pImageBuf == NULL) return;
+	if (pImageBuf == NULL || hdc[1] == NULL) return;
+	bitmapinfo[1]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 	bitmapinfo[1]->bmiHeader.biWidth = 260;
 	bitmapinfo[1]->bmiHeader.biHeight = -260;
+	bitmapinfo[1]->bmiHeader.biPlanes = 1;
 	bitmapinfo[1]->bmiHeader.biBitCount = 24;
+	bitmapinfo[1]->bmiHeader.biCompression = BI_RGB;
+	bitmapinfo[1]->bmiHeader.biSizeImage = 260 * 260 * 3;
 	SetStretchBltMode(hdc[1], COLORONCOLOR);
 	StretchDIBits(hdc[1], 0, 0, rectStaticClient[1].Width(), rectStaticClient[1].Height(), 0, 0, 260, 260, pImageBuf, bitmapinfo[1], DIB_RGB_COLORS, SRCCOPY);
 }
 
 void CPylonSampleProgramDlg::DisplayCam2(void* pImageBuf)
 {
-	if (pImageBuf == NULL) return;
+	if (pImageBuf == NULL || hdc[2] == NULL) return;
+	bitmapinfo[2]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 	bitmapinfo[2]->bmiHeader.biWidth = 260;
 	bitmapinfo[2]->bmiHeader.biHeight = -260;
+	bitmapinfo[2]->bmiHeader.biPlanes = 1;
 	bitmapinfo[2]->bmiHeader.biBitCount = 24;
+	bitmapinfo[2]->bmiHeader.biCompression = BI_RGB;
+	bitmapinfo[2]->bmiHeader.biSizeImage = 260 * 260 * 3;
 	SetStretchBltMode(hdc[2], COLORONCOLOR);
 	StretchDIBits(hdc[2], 0, 0, rectStaticClient[2].Width(), rectStaticClient[2].Height(), 0, 0, 260, 260, pImageBuf, bitmapinfo[2], DIB_RGB_COLORS, SRCCOPY);
 }
 
 void CPylonSampleProgramDlg::DisplayCam3(void* pImageBuf)
 {
-	if (pImageBuf == NULL) return;
+	if (pImageBuf == NULL || hdc[3] == NULL) return;
+	bitmapinfo[3]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 	bitmapinfo[3]->bmiHeader.biWidth = 260;
 	bitmapinfo[3]->bmiHeader.biHeight = -260;
+	bitmapinfo[3]->bmiHeader.biPlanes = 1;
 	bitmapinfo[3]->bmiHeader.biBitCount = 24;
+	bitmapinfo[3]->bmiHeader.biCompression = BI_RGB;
+	bitmapinfo[3]->bmiHeader.biSizeImage = 260 * 260 * 3;
 	SetStretchBltMode(hdc[3], COLORONCOLOR);
 	StretchDIBits(hdc[3], 0, 0, rectStaticClient[3].Width(), rectStaticClient[3].Height(), 0, 0, 260, 260, pImageBuf, bitmapinfo[3], DIB_RGB_COLORS, SRCCOPY);
 }
+
 void CPylonSampleProgramDlg::OnBnClickedCam0Live()
 {
-
-	if(m_CameraManager.m_bCamConnectFlag[0] == true)
+	if (m_CameraManager.m_bCamConnectFlag[0] == true)
 	{
-		 bStopThread[0]=(bStopThread[0]+1)&0x01;   
-		 if(bStopThread[0])
-		 {
+		// 토글 로직 (0 -> 1, 1 -> 0)
+		bStopThread[0] = !bStopThread[0];
+
+		if (bStopThread[0])
+		{
 			bLiveFlag[0] = true;
-			m_CameraManager.GrabLive(0,0);
-			SetDlgItemText(IDC_CAM0_LIVE,_T("Live_Cam0_Stop"));
-			AfxBeginThread(LiveGrabThreadCam0,&m_nCamIndexBuf[0]);
-		 }
-		 else
-		 {
+			m_CameraManager.GrabLive(0, 0);
+			SetDlgItemText(IDC_CAM0_LIVE, _T("Live_Cam0_Stop"));
+
+			// 인덱스 버퍼 설정 후 스레드 시작
+			m_nCamIndexBuf[0] = 0;
+			AfxBeginThread(LiveGrabThreadCam0, &m_nCamIndexBuf[0]);
+		}
+		else
+		{
 			bLiveFlag[0] = false;
-			SetDlgItemText(IDC_CAM0_LIVE,_T("Live_Cam0_Start"));
-			//m_CameraManager.m_pCamera[0].StopGrabbing();				
-			m_CameraManager.LiveStop(0,0);
-		 }	
+			SetDlgItemText(IDC_CAM0_LIVE, _T("Live_Cam0_Start"));
+			m_CameraManager.LiveStop(0, 0);
+		}
 	}
 	else
 	{
-		AfxMessageBox(_T("Camera0 Connect를 하세요!!"));
-		CButton *pButton = (CButton*)pMainDlg->GetDlgItem(IDC_CAM0_LIVE);
-		pButton->SetCheck(0);
+		AfxMessageBox(_T("Camera0 Connect를 먼저 하세요!!"));
+		CButton* pButton = (CButton*)GetDlgItem(IDC_CAM0_LIVE);
+		if (pButton) pButton->SetCheck(0);
 	}
-
 }
+
 void CPylonSampleProgramDlg::OnBnClickedCam1Live()
 {
 
@@ -965,37 +997,63 @@ void CPylonSampleProgramDlg::OnBnClickedSoftTrigBtn()
 // close 카메라 추가해야 됨 2/5일
 void CPylonSampleProgramDlg::OnBnClickedExitBtn()
 {
-	for(int k=0; k<CAM_NUM; k++)
+	// 1. AI 서버 연결 종료 (추가)
+	// 통신 중인 소켓을 먼저 닫아 서버 측의 자원을 정리합니다.
+	if (m_CameraManager.m_bIsConnected)
 	{
-		
-		if(bitmapinfo[k])
-		{			
-			delete bitmapinfo[k];
-			bitmapinfo[k]=NULL;
-		}
-		if(pImageColorDestBuffer[k])
+		m_CameraManager.DisconnectFromServer();
+	}
+
+	// 2. 기존 종료 및 자원 해제 로직 (유지)
+	for (int k = 0; k < CAM_NUM; k++)
+	{
+		// 스레드 중지 플래그 설정 및 라이브 정지
+		bStopThread[k] = false;
+		m_CameraManager.LiveStop(k, 0);
+
+		// 비트맵 정보 메모리 해제
+		if (bitmapinfo[k])
 		{
-			for(int i=0; i<BUF_NUM; i++)
+			delete bitmapinfo[k];
+			bitmapinfo[k] = NULL;
+		}
+
+		// 컬러 데스트 버퍼 메모리 해제
+		if (pImageColorDestBuffer[k])
+		{
+			for (int i = 0; i < BUF_NUM; i++)
 			{
-				free(pImageColorDestBuffer[k][i]);
+				if (pImageColorDestBuffer[k][i])
+				{
+					free(pImageColorDestBuffer[k][i]);
+				}
 			}
 			free(pImageColorDestBuffer[k]);
 			pImageColorDestBuffer[k] = NULL;
 		}
-		if(pImageresizeOrgBuffer[k])
+
+		// 리사이즈 원본 버퍼 메모리 해제
+		if (pImageresizeOrgBuffer[k])
 		{
-			for(int i=0; i<BUF_NUM; i++)
+			for (int i = 0; i < BUF_NUM; i++)
 			{
-				free(pImageresizeOrgBuffer[k][i]);
+				if (pImageresizeOrgBuffer[k][i])
+				{
+					free(pImageresizeOrgBuffer[k][i]);
+				}
 			}
 			free(pImageresizeOrgBuffer[k]);
 			pImageresizeOrgBuffer[k] = NULL;
 		}
-		if(m_CameraManager.m_bCamOpenFlag[k] == true)
+
+		// 카메라 장치 닫기
+		if (m_CameraManager.m_bCamOpenFlag[k] == true)
 		{
 			m_CameraManager.Close_Camera(k);
 		}
 	}
+
+	// 모든 정리가 끝나면 대화 상자 종료
 	CDialog::OnOK();
 }
 
