@@ -25,9 +25,6 @@ UNCERTAIN_THRESHOLD = 0.60   # max_prob < 0.60 이면 UNCERTAIN
 # N=4장, 간격=0.25초 기준 실제 소요 ≈ 754ms, 여유 약 246ms
 PIPELINE_TIMEOUT_MS = 1000
 
-# ── 아두이노 시리얼 ───────────────────────────────────
-ARDUINO_PORT = "/dev/ttyACM0"   # 리눅스 시리얼 포트
-ARDUINO_BAUD = 9600
 
 # ── 모델 버전 ─────────────────────────────────────────
 MODEL_VERSION_ID = 1
@@ -38,4 +35,4 @@ SEND_RESULT_TO_MFC = True    # True로 바꾸면 MFC 전송 활성화
 # ── 철판 촬영 파라미터 ────────────────────────────────
 SHOT_COUNT = 4               # 철판 1개당 촬영 장수
 SHOT_INTERVAL_SEC = 0.25     # 촬영 간격 (초)
-MOTION_THRESHOLD = 500       # 프레임 차분 임계값 (픽셀 수), 실측 후 조정 가능
+MOTION_THRESHOLD = 500       # 프레임 차분 임계값 (픽셀 수), 실측 후 조정 가능SS

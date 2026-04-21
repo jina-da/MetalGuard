@@ -21,11 +21,10 @@ from datetime import datetime
 from typing import Callable
 
 import config
-from constants import CmdID
+from constants import CmdID, build_packet
 from server.handlers.ai_client import AIClient
 from server.handlers.mfc_handler import send_result_to_mfc
 from server.handlers.camera_handler import ImageTask
-from server.engine.arduino_serial import ArduinoSerial
 from server.db.db_manager import DBManager
 
 logger = logging.getLogger(__name__)
@@ -41,11 +40,11 @@ class PlateBuffer:
     """
     def __init__(self, plate_id: int, total_shots: int):
         self.plate_id = plate_id
-        self.total_shots = total_shots                   # 수신 예정 총 장수
-        self.results: list[dict] = []                   # 장별 추론 결과 누적
-        self.verdicts: list[str] = []                   # 장별 판정 결과 누적
-        self.defect_classes: list[str] = []             # 장별 불량 클래스 누적
-        self.first_received_at: float = time.monotonic()  # 첫 장 수신 시점 (파이프라인 측정용)
+        self.total_shots = total_shots                    # 수신 예정 총 장수
+        self.results: list[dict] = []                    # 장별 추론 결과 누적
+        self.verdicts: list[str] = []                    # 장별 판정 결과 누적
+        self.defect_classes: list[str] = []              # 장별 불량 클래스 누적
+        self.first_received_at: float = time.monotonic() # 첫 장 수신 시점 (파이프라인 측정용)
 
     def add(self, verdict: str, defect_class: str, ai_response: dict) -> None:
         """장별 결과 추가."""
@@ -60,7 +59,7 @@ class PlateBuffer:
     def get_final_verdict(self) -> tuple[str, str]:
         """
         종합 판정.
-        - FAIL 1개라도 있으면 → FAIL (가장 심한 불량 클래스 반환)
+        - FAIL 1개라도 있으면 → FAIL (가장 먼저 나온 불량 클래스 반환)
         - FAIL 없고 UNCERTAIN 있으면 → UNCERTAIN
         - 전부 PASS → PASS
 
@@ -68,7 +67,6 @@ class PlateBuffer:
             (final_verdict, final_defect_class)
         """
         if "FAIL" in self.verdicts:
-            # FAIL 중 가장 먼저 나온 불량 클래스 반환
             fail_idx = self.verdicts.index("FAIL")
             return "FAIL", self.defect_classes[fail_idx]
         elif "UNCERTAIN" in self.verdicts:
@@ -89,15 +87,15 @@ class VerdictEngine:
         image_queue: queue.Queue,
         ai_client: AIClient,
         db_manager: DBManager,
-        mfc_conn_getter: Callable,            # () -> socket | None
-        arduino: ArduinoSerial | None = None,
+        mfc_conn_getter: Callable,       # () -> socket | None
+        arduino_conn_getter: Callable,   # () -> socket | None
         model_version_id: int = 1,
     ):
         self._queue = image_queue
         self._ai = ai_client
         self._db = db_manager
-        self._get_mfc_conn = mfc_conn_getter
-        self._arduino = arduino
+        self._get_mfc_conn = mfc_conn_getter         # MFC 소켓 getter
+        self._get_arduino_conn = arduino_conn_getter  # 아두이노 소켓 getter
         self._model_version_id = model_version_id
         self._running = False
         self._thread: threading.Thread | None = None
@@ -312,7 +310,7 @@ class VerdictEngine:
     ) -> None:
         """
         pipeline_log INSERT.
-        - 타임아웃 또는 150ms 초과 → 전수 저장
+        - 타임아웃 또는 PIPELINE_TIMEOUT_MS 초과 → 전수 저장
         - 정상 건 → 100건당 1건 샘플링
         """
         force_save = timeout_flag or pipeline_ms > config.PIPELINE_TIMEOUT_MS
@@ -356,16 +354,37 @@ class VerdictEngine:
         send_result_to_mfc(mfc_conn, payload)
 
     # ──────────────────────────────────────────────
-    # 아두이노 전송
+    # 아두이노 전송 (VERDICT_PASS/FAIL/UNCERTAIN/TIMEOUT)
     # ──────────────────────────────────────────────
 
     def _send_to_arduino(self, verdict: str) -> None:
         """
-        아두이노로 판정 결과 시리얼 전송.
-        PASS→P\\n / FAIL→F\\n / UNCERTAIN→U\\n / TIMEOUT→T\\n
+        아두이노 클라이언트(희창님 PC)로 판정 결과 패킷 전송.
+        PASS→VERDICT_PASS(201) / FAIL→VERDICT_FAIL(202)
+        UNCERTAIN→VERDICT_UNCERTAIN(203) / TIMEOUT→VERDICT_TIMEOUT(204)
+        body 없이 cmdId만 전송, 희창님 PC가 받아서 아두이노로 시리얼 전달.
         """
-        if self._arduino is None:
+        arduino_conn = self._get_arduino_conn()
+        if arduino_conn is None:
+            logger.warning("[VerdictEngine] 아두이노 클라이언트 미연결, 전송 스킵")
             return
-        ok = self._arduino.send_verdict(verdict)
-        if not ok:
-            logger.warning(f"[VerdictEngine] 아두이노 전송 실패: verdict={verdict}")
+
+        # verdict → cmdId 매핑
+        verdict_cmd_map: dict[str, int] = {
+            "PASS":      CmdID.VERDICT_PASS,
+            "FAIL":      CmdID.VERDICT_FAIL,
+            "UNCERTAIN": CmdID.VERDICT_UNCERTAIN,
+            "TIMEOUT":   CmdID.VERDICT_TIMEOUT,
+        }
+        cmd_id = verdict_cmd_map.get(verdict)
+        if cmd_id is None:
+            logger.error(f"[VerdictEngine] 알 수 없는 판정값: {verdict}")
+            return
+
+        try:
+            # body 없이 cmdId만 전송
+            packet = build_packet(cmd_id, b"")
+            arduino_conn.sendall(packet)
+            logger.debug(f"[VerdictEngine] 아두이노 전송: {verdict} (cmdId={cmd_id})")
+        except Exception as e:
+            logger.error(f"[VerdictEngine] 아두이노 전송 실패: {e}")
