@@ -20,10 +20,15 @@ CCameraManager::CCameraManager(void)
 {
 	Pylon::PylonInitialize();
 
+	// --- 통신 및 상태 관련 초기화 ---
 	m_hSocket = INVALID_SOCKET;
 	m_bIsConnected = false;
+	m_bIsServerConnected = false; // 서버 연결 상태 플래그
 	m_serverIP = "10.10.10.109";
 	m_serverPort = 8000;
+
+	// --- 전역 촬영 설정 초기화 ---
+	nTotalShots = 4; // 요구사항에 따른 기본 촬영 횟수 설정
 
 	for (int i = 0; i < CAM_NUM; i++)
 	{
@@ -33,6 +38,10 @@ CCameraManager::CCameraManager(void)
 		m_bCamOpenFlag[i] = false;
 		m_iGrabbedFrame[i] = 0;
 		pImage24Buffer[i] = NULL;
+
+		// --- 카메라별 순번 및 JSON 초기화 ---
+		nShotIndex[i] = 1;      // 1번 사진부터 시작
+		m_strJsonBody[i] = "";  // 빈 문자열로 초기화
 	}
 }
 
@@ -110,10 +119,7 @@ int CCameraManager::FindCamera(char szCamName[CAM_NUM][100],char szCamSerialNumb
 			return -2;
     }
 }
-/*
-     nCamIndex  = 프로그램에서 사용할 카메라 인덱스
-	 nPosition  = 시스템에서 연결된 실제 순서
-*/
+
 int CCameraManager::Open_Camera(int nCamIndex, int nPosition)
 {
 	try
@@ -141,21 +147,18 @@ int CCameraManager::Open_Camera(int nCamIndex, int nPosition)
 		m_pCamera[nCamIndex].RegisterConfiguration(
 			this,
 			Pylon::RegistrationMode_Append,
-			Pylon::Cleanup_None  // 또는 Pylon::Ownership_ExternalOwnership
+			Pylon::Cleanup_None  
 		);
 
 		// 2. Grab 완료 이벤트 핸들러 등록
 		m_pCamera[nCamIndex].RegisterImageEventHandler(
 			this,
 			Pylon::RegistrationMode_Append,
-			Pylon::Cleanup_None  // 또는 Pylon::Ownership_ExternalOwnership
+			Pylon::Cleanup_None
 		);
-		// --- 오류 수정 구간 끝 ---
 
 		m_pCamera[nCamIndex].Open();
-
 		m_pCameraNodeMap[nCamIndex] = &m_pCamera[nCamIndex].GetNodeMap();
-
 		m_bCamOpenFlag[nCamIndex] = true;
 
 		return 0;
@@ -171,6 +174,7 @@ int CCameraManager::Open_Camera(int nCamIndex, int nPosition)
 		return -2;
 	}
 }
+
 int CCameraManager::Close_Camera(int nCamIndex)
 {
 	try
@@ -254,8 +258,8 @@ int CCameraManager::Connect_Camera(int nCamIndex, int nOffsetX, int nOffsetY, in
 		pImage24Buffer[nCamIndex] = new unsigned char[nBufferSize];
 		memset(pImage24Buffer[nCamIndex], 0, nBufferSize);
 
-		// [신규] 서버 전송용 상태 초기화
-		// 실제 운용 시에는 이 값들을 외부에서 동적으로 받아올 수 있게 확장 가능합니다.
+		// 서버 전송용 상태 초기화
+		// 실제 운용 시에는 이 값들을 외부에서 동적으로 받아올 수 있게 확장 가능
 		m_bCamConnectFlag[nCamIndex] = true;
 
 		return 0;
@@ -278,14 +282,14 @@ int CCameraManager::SingleGrab(int nCamIndex)
 		if (!m_pCamera[nCamIndex].IsPylonDeviceAttached()) return -1;
 
 		// 1. 이미 그랩 중(라이브)이라면 중단하지 말고 그대로 진행하거나
-		// 만약 정지 상태라면 1장만 찍도록 시작합니다.
+		// 만약 정지 상태라면 1장만 찍도록 시작
 		if (!m_pCamera[nCamIndex].IsGrabbing())
 		{
 			m_pCamera[nCamIndex].StartGrabbing(1, GrabStrategy_LatestImageOnly);
 		}
 
 		CGrabResultPtr ptrGrabResult;
-		// 2. RetrieveResult를 통해 스트림 스레드를 파괴하지 않고 데이터만 채갑니다.
+		// 2. RetrieveResult를 통해 스트림 스레드를 파괴하지 않고 데이터만 가로챔
 		if (m_pCamera[nCamIndex].RetrieveResult(5000, ptrGrabResult, TimeoutHandling_ThrowException))
 		{
 			if (ptrGrabResult->GrabSucceeded())
@@ -510,6 +514,7 @@ int CCameraManager::GetEnumeration(int nCamIndex, char *szValue, char *szNodeNam
 			return -2;   
     }
 }
+
 int CCameraManager::SetEnumeration(int nCamIndex, char *szValue, char *szNodeName)
 {
     try
@@ -577,6 +582,7 @@ int CCameraManager::GetInteger(int nCamIndex, int *nValue, char *szNodeName)
 			return -2;   
     }
 }
+
 int CCameraManager::GetIntegerMax(int nCamIndex, int *nValue, char *szNodeName)
 {
     try
@@ -610,6 +616,7 @@ int CCameraManager::GetIntegerMax(int nCamIndex, int *nValue, char *szNodeName)
 			return -2;   
     }
 }
+
 int CCameraManager::GetIntegerMin(int nCamIndex, int *nValue, char *szNodeName)
 {
     try
@@ -643,6 +650,7 @@ int CCameraManager::GetIntegerMin(int nCamIndex, int *nValue, char *szNodeName)
 			return -2;   
     }
 }
+
 int CCameraManager::SetInteger(int nCamIndex, int nValue, char *szNodeName)
 {
     try
@@ -711,6 +719,7 @@ int CCameraManager::GetBoolean(int nCamIndex, bool *bValue, char *szNodeName)
 			return -2;   
     }
 }
+
 int CCameraManager::SetBoolean(int nCamIndex, bool bValue, char *szNodeName)
 {
     try
@@ -744,6 +753,7 @@ int CCameraManager::SetBoolean(int nCamIndex, bool bValue, char *szNodeName)
 			return -2;   
     }
 }
+
 int CCameraManager::GetFloat(int nCamIndex, float *fValue, char *szNodeName)
 {
     try
@@ -777,6 +787,7 @@ int CCameraManager::GetFloat(int nCamIndex, float *fValue, char *szNodeName)
 			return -2;   
     }
 }
+
 int CCameraManager::SetFloat(int nCamIndex, float fValue, char *szNodeName)
 {
     try
@@ -810,6 +821,7 @@ int CCameraManager::SetFloat(int nCamIndex, float fValue, char *szNodeName)
 			return -2;   
     }
 }
+
 int CCameraManager::SetCommand(int nCamIndex, char *szNodeName)
 {
     try
@@ -865,8 +877,7 @@ int CCameraManager::SaveImage(int nFileFormat, unsigned char* pImage, char* file
 		default: ImageFileFormat = ImageFileFormat_Bmp; break;
 		}
 
-		// 3. 픽셀 타입 및 규격 강제 동기화 (민기 파트 고정 규격)
-		// OnImageGrabbed 혹은 SingleGrab에서 260x260x3(BGR)으로 만들었으므로 이를 준수해야 함
+		// 3. 픽셀 타입 및 규격 강제 동기화
 		EPixelType ImagePixleType = PixelType_BGR8packed;
 		int finalW = 260;
 		int finalH = 260;
@@ -874,7 +885,6 @@ int CCameraManager::SaveImage(int nFileFormat, unsigned char* pImage, char* file
 		size_t finalBufferSize = (size_t)finalW * finalH * finalBand;
 
 		// 4. Pylon 저장 함수 호출
-		// 여기서 예외가 난다면 100% 버퍼 크기 불일치 혹은 경로 문제입니다.
 		CImagePersistence::Save(
 			ImageFileFormat,
 			filename,
@@ -892,8 +902,6 @@ int CCameraManager::SaveImage(int nFileFormat, unsigned char* pImage, char* file
 	}
 	catch (const Pylon::GenericException& e)
 	{
-		// 디버그 출력 창에서 이 내용을 꼭 읽어보세요.
-		// "Directory not found" 인지 "Buffer too small" 인지 알려줍니다.
 		TRACE(_T("Pylon Save Runtime Error: %S\n"), e.GetDescription());
 		return -2;
 	}
@@ -949,7 +957,7 @@ void CCameraManager::DisconnectFromServer()
 
 bool CCameraManager::SendImageToServer(int nCamIndex, const cv::Mat& matEntry)
 {
-	// C2597 에러 방지: 멤버 변수 사용 시 클래스 내부 함수임을 명시 (이미 되어 있음)
+	// 멤버 변수 사용 시 클래스 내부 함수임을 명시
 	if (!m_bIsConnected || matEntry.empty()) return false;
 
 	try {
@@ -1025,7 +1033,7 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 				}
 			}
 
-			// 4. [핵심] 서버 요청 사항 반영된 JSON 바디 구성
+			// 4. 서버 요청 사항 반영된 JSON 바디 구성
 			// shot_index는 각 카메라 별로 1~4까지 순환하도록 관리
 			static int nShotIndex[CAM_NUM] = { 1, 1, 1, 1 };
 			int nTotalShots = 4;

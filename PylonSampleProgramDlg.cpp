@@ -47,8 +47,8 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 						memcpy(pMainDlg->pImageColorDestBuffer[nCamIndex][nindex],
 							pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex], nRoiSize);
 
-						// 2. [서버 전송] 전처리된 이미지와 JSON 정보를 서버로 전송
-						// 이 부분에서 기존에 구현하신 소켓 전송 함수를 호출하시면 됩니다.
+						// 2. 전처리된 이미지와 JSON 정보를 서버로 전송
+						// 이 부분에서 기존에 구현하신 소켓 전송 함수를 호출
 						// pMainDlg->SendImagePacket(nCamIndex, pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex], nRoiSize);
 
 						pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
@@ -201,7 +201,7 @@ BOOL CPylonSampleProgramDlg::OnInitDialog()
 {
 	CDialog::OnInitDialog();
 
-	// 시스템 메뉴 및 아이콘 설정 (기존 로직)
+	// 시스템 메뉴 및 아이콘 설정
 	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
 	ASSERT(IDM_ABOUTBOX < 0xF000);
 	CMenu* pSysMenu = GetSystemMenu(FALSE);
@@ -226,16 +226,15 @@ BOOL CPylonSampleProgramDlg::OnInitDialog()
 
 	pMainDlg = this;
 
-	// --- 2. [핵심 수정] 이미지 버퍼(pImageColorDestBuffer) 메모리 할당 ---
-	// 이 부분이 누락되어 스레드에서 예외가 발생했던 것입니다.
+	// --- 2. 이미지 버퍼(pImageColorDestBuffer) 메모리 할당 ---
 	for (int i = 0; i < CAM_NUM; i++)
 	{
-		// 1단계: 각 카메라당 BUF_NUM(3)개의 포인터를 담을 배열 할당
+		// 각 카메라당 BUF_NUM(3)개의 포인터를 담을 배열 할당
 		pImageColorDestBuffer[i] = new unsigned char* [BUF_NUM];
 
 		for (int j = 0; j < BUF_NUM; j++)
 		{
-			// 2단계: 각 프레임이 저장될 실제 메모리 할당 (260x260x3 BGR)
+			// 각 프레임이 저장될 실제 메모리 할당 (260x260x3 BGR)
 			size_t nFrameSize = 260 * 260 * 3;
 			pImageColorDestBuffer[i][j] = new unsigned char[nFrameSize];
 			memset(pImageColorDestBuffer[i][j], 0, nFrameSize); // 0으로 초기화
@@ -288,10 +287,6 @@ void CPylonSampleProgramDlg::OnSysCommand(UINT nID, LPARAM lParam)
 	}
 }
 
-// 대화 상자에 최소화 단추를 추가할 경우 아이콘을 그리려면
-//  아래 코드가 필요합니다. 문서/뷰 모델을 사용하는 MFC 응용 프로그램의 경우에는
-//  프레임워크에서 이 작업을 자동으로 수행합니다.
-
 void CPylonSampleProgramDlg::OnPaint()
 {
 	if (IsIconic())
@@ -300,7 +295,7 @@ void CPylonSampleProgramDlg::OnPaint()
 
 		SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
 
-		// 클라이언트 사각형에서 아이콘을 가운데에 맞춥니다.
+		// 클라이언트 사각형에서 아이콘을 가운데 정렬
 		int cxIcon = GetSystemMetrics(SM_CXICON);
 		int cyIcon = GetSystemMetrics(SM_CYICON);
 		CRect rect;
@@ -308,7 +303,7 @@ void CPylonSampleProgramDlg::OnPaint()
 		int x = (rect.Width() - cxIcon + 1) / 2;
 		int y = (rect.Height() - cyIcon + 1) / 2;
 
-		// 아이콘을 그립니다.
+		// 아이콘 드로우
 		dc.DrawIcon(x, y, m_hIcon);
 	}
 	else
@@ -317,8 +312,7 @@ void CPylonSampleProgramDlg::OnPaint()
 	}
 }
 
-// 사용자가 최소화된 창을 끄는 동안에 커서가 표시되도록 시스템에서
-//  이 함수를 호출합니다.
+// 사용자가 최소화된 창을 끄는 동안에 커서가 표시되도록 시스템에서 호출
 HCURSOR CPylonSampleProgramDlg::OnQueryDragIcon()
 {
 	return static_cast<HCURSOR>(m_hIcon);
@@ -345,11 +339,6 @@ void CPylonSampleProgramDlg::OnBnClickedFindCamBtn()
 			CString strcamname = (CString)m_szCamName[i];
 			strSerialNum = (CString)m_szSerialNum[i];
 
-			// ==========================================================
-			// [민기용 디버깅 로그] 실제 인식된 시리얼 번호를 확인합니다.
-			// 만약 리스트에 아무것도 안 뜬다면, 아래 창에 뜨는 번호와 
-			// m_strCamSerial[0] 등의 값이 달라서 발생하는 문제입니다.
-			// ==========================================================
 			CString strCheck;
 			strCheck.Format(_T("인식된 카메라 [%d]\n이름: %s\n시리얼: %s\n\n설정파일 시리얼0: %s\n설정파일 시리얼1: %s"),
 				i, strcamname, strSerialNum, m_strCamSerial[0], m_strCamSerial[1]);
@@ -394,11 +383,6 @@ void CPylonSampleProgramDlg::OnBnClickedFindCamBtn()
 				m_ctrlCamList.SetItemText(i, 3, _T("Find_Success"));
 				bFound = true;
 			}
-
-			// ==========================================================
-			// [임시 강제추가 로직] 
-			// 만약 시리얼 번호가 불일치하더라도 리스트에 띄워서 실행 가능하게 함
-			// ==========================================================
 			if (!bFound)
 			{
 				m_ctrlCamList.InsertItem(i, strcamname);
@@ -554,7 +538,7 @@ void CPylonSampleProgramDlg::OnBnClickedConnectCameraBtn()
 	m_iCameraIndex = nIndex;
 
 	// 3. 카메라 연결 시도
-	// 인자값들이 기존에 사용하던 설정값과 맞는지 확인하세요.
+	// 인자값들이 기존에 사용하던 설정값과 맞는지 확인
 	int nRet = m_CameraManager.Connect_Camera(m_iCameraIndex, 0, 0, 0, 0, _T("Mono8"));
 
 	if (nRet == 0) // 카메라 연결 성공 시
@@ -626,7 +610,7 @@ void CPylonSampleProgramDlg::AllocImageBuf(void)
 {
 	UpdateData();
 
-	// 1. 기존 Mono용 버퍼 할당 로직 (기존 유지)
+	// 1. 기존 Mono용 버퍼 할당 로직
 	if (m_CameraManager.m_strCM_ImageForamt[m_iCameraIndex] == "Mono8" ||
 		m_CameraManager.m_strCM_ImageForamt[m_iCameraIndex] == "Mono12" ||
 		m_CameraManager.m_strCM_ImageForamt[m_iCameraIndex] == "Mono16")
@@ -638,8 +622,8 @@ void CPylonSampleProgramDlg::AllocImageBuf(void)
 		}
 	}
 
-	// 2. [민기 수정] 전처리된 260x260 컬러 이미지를 담을 버퍼는 '반드시' 할당해야 함
-	// 이미지 형식과 상관없이 3채널(RGB) 버퍼를 할당합니다.
+	// 2. 전처리된 260x260 컬러 이미지를 담을 버퍼는 '반드시' 할당해야 함
+	// 이미지 형식과 상관없이 3채널(RGB) 버퍼를 할당
 	if (pImageColorDestBuffer[m_iCameraIndex] == NULL)
 	{
 		pImageColorDestBuffer[m_iCameraIndex] = (unsigned char**)malloc(BUF_NUM * sizeof(unsigned char*));
@@ -771,7 +755,6 @@ void CPylonSampleProgramDlg::DisplayCam0(void* pImageBuf)
 	}
 }
 
-// 1, 2, 3번 카메라도 동일한 로직으로 수정 (생략 없이 적용하세요)
 void CPylonSampleProgramDlg::DisplayCam1(void* pImageBuf)
 {
 	if (pImageBuf == NULL || hdc[1] == NULL) return;
@@ -996,7 +979,7 @@ void CPylonSampleProgramDlg::OnBnClickedSoftTrigBtn()
 void CPylonSampleProgramDlg::OnBnClickedExitBtn()
 {
 	// 1. AI 서버 연결 종료 (추가)
-	// 통신 중인 소켓을 먼저 닫아 서버 측의 자원을 정리합니다.
+	// 통신 중인 소켓을 먼저 닫아 서버 측의 자원을 정리
 	if (m_CameraManager.m_bIsConnected)
 	{
 		m_CameraManager.DisconnectFromServer();
@@ -1062,15 +1045,14 @@ void CPylonSampleProgramDlg::OnBnClickedSaveImgBtn()
 	int nCam = m_iCameraIndex;
 
 	// 2. 저장 경로 설정 및 폴더 생성 체크
-	// C:\Temp 폴더가 없으면 에러가 나므로, 직접 폴더를 생성하거나 확인해야 합니다.
 	CString strPath = _T("C:\\Temp");
-	if (!PathFileExists(strPath)) // #include <shlwapi.h> 필요 (프로젝트 설정에 따라 다름)
+	if (!PathFileExists(strPath))
 	{
 		CreateDirectory(strPath, NULL); // 폴더가 없으면 생성
 	}
 
-	// 파일명을 매번 다르게 저장할 수 있도록 시스템 시간 등을 섞어주면 좋습니다.
-	// 일단 테스트를 위해 고정 경로를 사용하되, char* 변환을 안전하게 수행합니다.
+	// 파일명을 매번 다르게 저장할 수 있도록 시스템 시간 등을 섞어줌
+	// 일단 테스트를 위해 고정 경로를 사용하되, char* 변환을 안전하게 수행
 	char szFileName[256];
 	sprintf_s(szFileName, "C:\\Temp\\MetalGuard_Cam%d.bmp", nCam);
 
@@ -1142,7 +1124,7 @@ void CPylonSampleProgramDlg::OnNMClickListCam(NMHDR* pNMHDR, LRESULT* pResult)
 		m_iListIndex = nItem;
 		m_iCameraIndex = nItem;
 
-		// [추가] 클릭이 되는지 확인하는 로그
+		// 클릭이 되는지 확인하는 로그
 		CString str;
 		str.Format(_T("선택된 인덱스: %d"), m_iCameraIndex);
 		AfxMessageBox(str);
