@@ -32,6 +32,8 @@ CCameraManager::CCameraManager(void)
 
 	for (int i = 0; i < CAM_NUM; i++)
 	{
+		// 라이브 이미지 버퍼 초기화
+		m_matLiveImage[i] = cv::Mat::zeros(1200, 1920, CV_8UC3);
 		m_bCaptureEnd[i] = false;
 		m_bRemoveCamera[i] = false;
 		m_bCamConnectFlag[i] = false;
@@ -39,9 +41,10 @@ CCameraManager::CCameraManager(void)
 		m_iGrabbedFrame[i] = 0;
 		pImage24Buffer[i] = NULL;
 
-		// --- 카메라별 순번 및 JSON 초기화 ---
+		// --- 카메라별 순번 및 전송 시간 초기화 ---
 		nShotIndex[i] = 1;      // 1번 사진부터 시작
 		m_strJsonBody[i] = "";  // 빈 문자열로 초기화
+		m_dwLastSendTime[i] = 0; // 마지막 전송 시간 초기화
 	}
 }
 
@@ -451,12 +454,12 @@ void CCameraManager::WriteLog(int nCamIdex, CString strTemp1, CString strTemp2)
 
 bool CCameraManager::CheckCaptureEnd(int nCamIndex)
 {
-		return m_bCaptureEnd[nCamIndex];
+	return m_bCaptureEnd[nCamIndex];
 }
 
 void CCameraManager::ReadEnd(int nCamIndex)
 {
-	    m_bCaptureEnd[nCamIndex] = false;
+	m_bCaptureEnd[nCamIndex] = false; // 여기서 false를 해줘야 다음 콜백을 기다림
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
@@ -931,18 +934,27 @@ bool CCameraManager::ConnectToServer(std::string ip, int port)
 	m_hSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (m_hSocket == INVALID_SOCKET) return false;
 
+	// TCP_NODELAY 설정 (Nagle 알고리즘 비활성화 - 150ms 목표 달성에 필수)
+	BOOL bOptVal = TRUE;
+	setsockopt(m_hSocket, IPPROTO_TCP, TCP_NODELAY, (char*)&bOptVal, sizeof(BOOL));
+
 	sockaddr_in serverAddr;
 	serverAddr.sin_family = AF_INET;
 	serverAddr.sin_port = htons(port);
-	inet_pton(AF_INET, ip.c_str(), &serverAddr.sin_addr);
 
-	if (connect(m_hSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+	// inet_ptr 대신 inet_pton 사용 (VS2022 표준)
+	if (inet_pton(AF_INET, ip.c_str(), &serverAddr.sin_addr) <= 0) {
 		closesocket(m_hSocket);
-		m_bIsConnected = false;
 		return false;
 	}
 
-	m_bIsConnected = true;
+	if (connect(m_hSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+		closesocket(m_hSocket);
+		m_bIsServerConnected = false;
+		return false;
+	}
+
+	m_bIsServerConnected = true;
 	return true;
 }
 
@@ -992,82 +1004,98 @@ bool CCameraManager::SendImageToServer(int nCamIndex, const cv::Mat& matEntry)
 
 void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr& ptrGrabResult)
 {
-	// 1. 유효성 검사
-	if (!ptrGrabResult.IsValid()) return;
-
+	// context를 안전하게 가져오기 위해 정적 캐스팅 사용
 	int nCameraIndex = (int)ptrGrabResult->GetCameraContext();
-	if (nCameraIndex < 0 || nCameraIndex >= CAM_NUM) return;
 
 	try
 	{
 		if (ptrGrabResult->GrabSucceeded())
 		{
-			// 2. 원본 데이터 획득
-			uint8_t* pBuffer = (uint8_t*)ptrGrabResult->GetBuffer();
-			int nWidth = (int)ptrGrabResult->GetWidth();
-			int nHeight = (int)ptrGrabResult->GetHeight();
+			// 1. Pylon 이미지를 OpenCV Mat으로 변환
+			CPylonImage pylonImage;
+			pylonImage.AttachGrabResultBuffer(ptrGrabResult);
 
-			if (pBuffer == NULL || nWidth <= 0 || nHeight <= 0) return;
+			CImageFormatConverter converter;
+			converter.OutputPixelFormat = PixelType_BGR8packed;
+			CPylonImage targetImage;
+			converter.Convert(targetImage, pylonImage);
 
-			// 3. OpenCV 전처리 (Crop & Resize)
-			cv::Mat matRaw = cv::Mat(nHeight, nWidth, CV_8UC1, pBuffer);
+			// 원본 이미지 생성 (화면 출력 및 크롭용)
+			cv::Mat matOriginal(ptrGrabResult->GetHeight(), ptrGrabResult->GetWidth(), CV_8UC3, (uint8_t*)targetImage.GetBuffer());
 
-			int startX = std::min(470, nWidth - 1);
-			int startY = std::min(270, nHeight - 1);
-			int targetW = std::min(1000, nWidth - startX);
-			int targetH = std::min(1000, nHeight - startY);
+			// 화면 출력을 위해 공유 버퍼에 복사 (사용자 화면은 끊김 없이 출력)
+			matOriginal.copyTo(m_matLiveImage[nCameraIndex]);
 
-			if (targetW > 0 && targetH > 0)
+			// 2. 서버 전송 조건 확인 (연결 여부 + 전송 간격 체크)
+			if (m_bIsServerConnected && m_hSocket != INVALID_SOCKET)
 			{
-				cv::Mat croppedImg = matRaw(cv::Rect(startX, startY, targetW, targetH)).clone();
-				cv::Mat finalImg;
-
-				// 흑백 -> 컬러 변환 및 260x260 리사이즈
-				cv::cvtColor(croppedImg, finalImg, cv::COLOR_GRAY2BGR);
-				cv::resize(finalImg, finalImg, cv::Size(260, 260));
-
-				// 전처리 이미지 버퍼 복사
-				if (pImage24Buffer[nCameraIndex] != NULL && !finalImg.empty())
+				// 초당 4장 제한 로직 (1000ms / 4 = 250ms)
+				DWORD dwCurrentTime = GetTickCount();
+				if (dwCurrentTime - m_dwLastSendTime[nCameraIndex] >= 250)
 				{
-					memcpy(pImage24Buffer[nCameraIndex], finalImg.data, 260 * 260 * 3);
+					// 3. ROI 크롭 및 이미지 압축 (260x260)
+					int centerX = matOriginal.cols / 2;
+					int centerY = matOriginal.rows / 2;
+					cv::Rect roi(centerX - 130, centerY - 130, 260, 260);
+					roi &= cv::Rect(0, 0, matOriginal.cols, matOriginal.rows);
+					cv::Mat matCropped = matOriginal(roi).clone();
+
+					std::vector<uchar> imgBuf;
+					std::vector<int> params = { cv::IMWRITE_JPEG_QUALITY, 90 };
+					cv::imencode(".jpg", matCropped, imgBuf, params);
+
+					// 4. 서버 규격에 맞춘 JSON 생성
+					nlohmann::json j;
+					j["mode"] = "inspect";
+					j["client_id"] = "cam_0" + std::to_string(nCameraIndex + 1);
+
+					CTime curTime = CTime::GetCurrentTime();
+					j["timestamp"] = (CT2A)curTime.Format("%Y-%m-%d %H:%M:%S");
+
+					j["plate_id"] = 1;
+					j["shot_index"] = nShotIndex[nCameraIndex];
+					j["total_shots"] = nTotalShots;
+
+					std::string jsonPayload = j.dump();
+
+					// 5. 패킷 사이즈 및 헤더 설정
+					uint32_t jsonLen = (uint32_t)jsonPayload.length();
+					uint32_t imageLen = (uint32_t)imgBuf.size();
+
+					PacketHeader header;
+					header.signature = htons(0x4D47);
+					header.cmdId = htons(1);           // IMG_SEND
+					header.bodySize = htonl(jsonLen);  // JSON 크기만 헤더에 명시
+
+					// 6. 데이터 순차 전송
+					// 헤더 전송
+					send(m_hSocket, (char*)&header, sizeof(header), 0);
+
+					// JSON 바디 전송
+					send(m_hSocket, jsonPayload.c_str(), (int)jsonLen, 0);
+
+					// 이미지 크기 전송 (4바이트)
+					uint32_t netImageLen = htonl(imageLen);
+					send(m_hSocket, (char*)&netImageLen, sizeof(netImageLen), 0);
+
+					// 이미지 바이트 전송
+					send(m_hSocket, (char*)imgBuf.data(), (int)imageLen, 0);
+
+					// --- 전송 관리 업데이트 ---
+					m_dwLastSendTime[nCameraIndex] = dwCurrentTime; // 마지막 전송 시간 갱신
+
+					nShotIndex[nCameraIndex]++;
+					if (nShotIndex[nCameraIndex] > nTotalShots) nShotIndex[nCameraIndex] = 1;
 				}
 			}
 
-			// 4. 서버 요청 사항 반영된 JSON 바디 구성
-			// shot_index는 각 카메라 별로 1~4까지 순환하도록 관리
-			static int nShotIndex[CAM_NUM] = { 1, 1, 1, 1 };
-			int nTotalShots = 4;
-
-			// 현재 시간 획득 (YYYY-MM-DD HH:MM:SS)
-			CTime t = CTime::GetCurrentTime();
-			CString strTime;
-			strTime.Format(_T("%04d-%02d-%02d %02d:%02d:%02d"),
-				t.GetYear(), t.GetMonth(), t.GetDay(), t.GetHour(), t.GetMinute(), t.GetSecond());
-
-			// nlohmann/json 객체 생성
-			nlohmann::json j;
-			j["mode"] = "inspect";
-			j["plate_id"] = 1; // 필요 시 전역 변수나 UI 입력값으로 변경 가능
-			j["shot_index"] = nShotIndex[nCameraIndex];
-			j["total_shots"] = nTotalShots;
-			j["client_id"] = "cam_0" + std::to_string(nCameraIndex + 1); // cam_01, cam_02...
-			j["timestamp"] = (CT2A)strTime;
-
-			// 생성된 JSON 문자열을 멤버 변수나 별도 버퍼에 저장 (서버 전송용)
-			// 예: m_strJsonBody[nCameraIndex] = j.dump();
-
-			// 다음 촬영을 위해 shot_index 증가 (1~4 순환)
-			nShotIndex[nCameraIndex]++;
-			if (nShotIndex[nCameraIndex] > nTotalShots) nShotIndex[nCameraIndex] = 1;
-
-			// 5. 완료 상태 갱신
+			// 라이브 스레드에게 작업 완료를 알림
 			m_bCaptureEnd[nCameraIndex] = true;
-			m_iGrabbedFrame[nCameraIndex] = (int)ptrGrabResult->GetImageNumber();
 		}
 	}
-	catch (const cv::Exception& e)
+	catch (const std::exception& e)
 	{
-		TRACE(_T("OpenCV Error in OnImageGrabbed: %S\n"), e.what());
+		TRACE(_T("Error in OnImageGrabbed: %S\n"), e.what());
 	}
 }
 

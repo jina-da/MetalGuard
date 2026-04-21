@@ -1,7 +1,4 @@
-﻿// PylonSampleProgramDlg.cpp : 구현 파일
-//
-
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "PylonSampleProgram.h"
 #include "PylonSampleProgramDlg.h"
 
@@ -13,89 +10,56 @@
 CPylonSampleProgramDlg *pMainDlg;
 UINT LiveGrabThreadCam0(LPVOID pParam)
 {
-	int nindex = 0;
 	int nCamIndex = *(int*)pParam;
-
-	QueryPerformanceFrequency(&(pMainDlg->freq[nCamIndex]));
-	QueryPerformanceCounter(&(pMainDlg->start[nCamIndex]));
-	pMainDlg->nFrameCount[nCamIndex] = 0;
-	CString Info;
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
 
 	while (pMainDlg->bStopThread[nCamIndex] == true)
 	{
-		if (pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] == true)
+		if (pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] == true) break;
+
+		// 이미지가 갱신되었는지 확인
+		if (pMainDlg->m_CameraManager.CheckCaptureEnd(nCamIndex))
 		{
-			pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] = false;
-			pMainDlg->m_ctrlCamList.SetItemText(nCamIndex, 3, _T("LostConnection"));
-		}
-		else
-		{
-			if (pMainDlg->m_CameraManager.CheckCaptureEnd(nCamIndex))
+			pMainDlg->nFrameCount[nCamIndex]++;
+
+			// OnPaint를 거치지 않고 바로 화면에 출력
+			CWnd* pWnd = pMainDlg->GetDlgItem(IDC_CAM0_DISPLAY); // 리소스 ID 확인 필수
+			if (pWnd && !pMainDlg->m_CameraManager.m_matLiveImage[nCamIndex].empty())
 			{
-				pMainDlg->nFrameCount[nCamIndex]++;
-				QueryPerformanceCounter(&(pMainDlg->end[nCamIndex]));
+				CRect rect;
+				pWnd->GetClientRect(&rect);
+				CDC* pDC = pWnd->GetDC();
 
-				if (pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex] != NULL)
-				{
-					int nRoiSize = 260 * 260 * 3;
+				// OpenCV Mat 리사이즈
+				cv::Mat matResized;
+				cv::resize(pMainDlg->m_CameraManager.m_matLiveImage[nCamIndex], matResized, cv::Size(rect.Width(), rect.Height()));
 
-					if (pMainDlg->pImageColorDestBuffer[nCamIndex] != NULL &&
-						nindex >= 0 && nindex < BUF_NUM &&
-						pMainDlg->pImageColorDestBuffer[nCamIndex][nindex] != NULL)
-					{
-						// 1. 화면 출력용 버퍼 복사
-						memcpy(pMainDlg->pImageColorDestBuffer[nCamIndex][nindex],
-							pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex], nRoiSize);
+				// 비트맵 정보 설정
+				BITMAPINFO bitInfo;
+				memset(&bitInfo, 0, sizeof(BITMAPINFO));
+				bitInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+				bitInfo.bmiHeader.biWidth = matResized.cols;
+				bitInfo.bmiHeader.biHeight = -matResized.rows; // 상하 반전 방지
+				bitInfo.bmiHeader.biPlanes = 1;
+				bitInfo.bmiHeader.biBitCount = 24;
+				bitInfo.bmiHeader.biCompression = BI_RGB;
 
-						// 2. 전처리된 이미지와 JSON 정보를 서버로 전송
-						// 이 부분에서 기존에 구현하신 소켓 전송 함수를 호출
-						// pMainDlg->SendImagePacket(nCamIndex, pMainDlg->m_CameraManager.pImage24Buffer[nCamIndex], nRoiSize);
+				// DC에 직접 그리기
+				pDC->SetStretchBltMode(COLORONCOLOR);
+				::SetDIBitsToDevice(pDC->GetSafeHdc(),
+					0, 0, matResized.cols, matResized.rows,
+					0, 0, 0, matResized.rows,
+					matResized.data, &bitInfo, DIB_RGB_COLORS);
 
-						pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
-
-						// 3. 화면 Display
-						switch (nCamIndex)
-						{
-						case 0: pMainDlg->DisplayCam0(pMainDlg->pImageColorDestBuffer[0][nindex]); break;
-						case 1: pMainDlg->DisplayCam1(pMainDlg->pImageColorDestBuffer[1][nindex]); break;
-						case 2: pMainDlg->DisplayCam2(pMainDlg->pImageColorDestBuffer[2][nindex]); break;
-						case 3: pMainDlg->DisplayCam3(pMainDlg->pImageColorDestBuffer[3][nindex]); break;
-						}
-					}
-					else
-					{
-						pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
-					}
-				}
-
-				nindex++;
-				if (nindex >= BUF_NUM) nindex = 0;
-
-				// FPS 계산 및 UI 업데이트
-				double dElapsed = (double)(pMainDlg->end[nCamIndex].QuadPart - pMainDlg->start[nCamIndex].QuadPart) / pMainDlg->freq[nCamIndex].QuadPart;
-				if (dElapsed > 1.0)
-				{
-					CString temp;
-					temp.Format(_T("%d fps"), pMainDlg->nFrameCount[nCamIndex]);
-					pMainDlg->SetDlgItemText(IDC_CAMERA0_STATS + nCamIndex, temp);
-					pMainDlg->nFrameCount[nCamIndex] = 0;
-					QueryPerformanceCounter(&(pMainDlg->start[nCamIndex]));
-				}
-
-				Info.Format(_T("Grabbed Frame = %d , SkippedFrame = %d"),
-					pMainDlg->m_CameraManager.m_iGrabbedFrame[nCamIndex],
-					pMainDlg->m_CameraManager.m_iSkippiedFrame[nCamIndex]);
-
-				switch (nCamIndex)
-				{
-				case 0: pMainDlg->SetDlgItemText(IDC_CAM0_INFO, Info); break;
-				case 1: pMainDlg->SetDlgItemText(IDC_CAM1_INFO, Info); break;
-				case 2: pMainDlg->SetDlgItemText(IDC_CAM2_INFO, Info); break;
-				case 3: pMainDlg->SetDlgItemText(IDC_CAM3_INFO, Info); break;
-				}
+				pWnd->ReleaseDC(pDC);
 			}
+
+			// 플래그 리셋 (다음 이미지를 받기 위함)
+			pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
 		}
-		Sleep(1);
+
+		// CPU 점유율 조절 (150ms 프로젝트이므로 10ms 정도면 충분히 빠릅니다)
+		Sleep(10);
 	}
 	return 0;
 }
@@ -287,28 +251,63 @@ void CPylonSampleProgramDlg::OnSysCommand(UINT nID, LPARAM lParam)
 	}
 }
 
+// PylonSampleProgramDlg.cpp 내 OnPaint 함수 전체 수정
 void CPylonSampleProgramDlg::OnPaint()
 {
 	if (IsIconic())
 	{
-		CPaintDC dc(this); // 그리기를 위한 디바이스 컨텍스트
-
+		CPaintDC dc(this); // 그리기를 위한 디바이스 컨텍스트입니다.
 		SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
-
-		// 클라이언트 사각형에서 아이콘을 가운데 정렬
 		int cxIcon = GetSystemMetrics(SM_CXICON);
 		int cyIcon = GetSystemMetrics(SM_CYICON);
 		CRect rect;
 		GetClientRect(&rect);
 		int x = (rect.Width() - cxIcon + 1) / 2;
 		int y = (rect.Height() - cyIcon + 1) / 2;
-
-		// 아이콘 드로우
 		dc.DrawIcon(x, y, m_hIcon);
 	}
 	else
 	{
+		CPaintDC dc(this);
 		CDialog::OnPaint();
+
+		// [추가] 카메라 0번(Live용) 이미지가 비어있지 않으면 화면에 출력
+		if (!m_CameraManager.m_matLiveImage[0].empty())
+		{
+			// 이미지를 표시할 Picture Control의 ID를 IDC_CAM0_VIEW라고 가정합니다.
+			// 실제 리소스 뷰에서 확인하신 ID로 변경하세요.
+			CWnd* pWnd = GetDlgItem(IDC_CAM0_DISPLAY);
+			if (pWnd)
+			{
+				CRect rect;
+				pWnd->GetClientRect(&rect);
+				CDC* pDC = pWnd->GetDC();
+
+				cv::Mat matResized;
+				// Picture Control 크기에 맞게 이미지 리사이즈
+				cv::resize(m_CameraManager.m_matLiveImage[0], matResized, cv::Size(rect.Width(), rect.Height()));
+
+				// OpenCV Mat을 MFC 전용 CImage나 Bitmap으로 변환하여 출력
+				BITMAPINFO bitInfo;
+				bitInfo.bmiHeader.biBitCount = 24;
+				bitInfo.bmiHeader.biWidth = matResized.cols;
+				bitInfo.bmiHeader.biHeight = -matResized.rows;
+				bitInfo.bmiHeader.biPlanes = 1;
+				bitInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+				bitInfo.bmiHeader.biCompression = BI_RGB;
+				bitInfo.bmiHeader.biClrImportant = 0;
+				bitInfo.bmiHeader.biClrUsed = 0;
+				bitInfo.bmiHeader.biSizeImage = 0;
+				bitInfo.bmiHeader.biXPelsPerMeter = 0;
+				bitInfo.bmiHeader.biYPelsPerMeter = 0;
+
+				// 고속 화면 출력
+				::SetDIBitsToDevice(pDC->GetSafeHdc(), 0, 0, matResized.cols, matResized.rows,
+					0, 0, 0, matResized.rows, matResized.data, &bitInfo, DIB_RGB_COLORS);
+
+				ReleaseDC(pDC);
+			}
+		}
 	}
 }
 

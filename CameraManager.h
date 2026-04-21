@@ -6,6 +6,7 @@
 #include <pylon/gige/GigETransportLayer.h>
 #include <pylon/gige/BaslerGigEDeviceInfo.h>
 #include <opencv2/opencv.hpp>
+#include <json.hpp> 
 
 // 통신 관련 헤더 및 라이브러리
 #include <winsock2.h>
@@ -76,6 +77,8 @@ public:
     int nTotalShots;                    // 전체 촬영 횟수
     int nShotIndex[CAM_NUM];            // 카메라별 현재 촬영 순서 (배열)
     std::string m_strJsonBody[CAM_NUM]; // 서버 전송용 JSON 문자열 (배열)
+    cv::Mat m_matLiveImage[CAM_NUM];    // 실시간 라이브 영상 출력을 위한 이미지 버퍼
+    DWORD m_dwLastSendTime[CAM_NUM]; // 각 카메라별 마지막 전송 시간을 저장
 
     // --- log 관련 변수 ---
     bool bLogUse;
