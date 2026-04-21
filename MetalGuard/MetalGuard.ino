@@ -1,5 +1,6 @@
-#include <Adafruit_NeoPixel.h>
 #include <Servo.h>
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
 
 // 핀 번호 정의
 const int LED_POWER = 5;     // Whilte LED
@@ -11,11 +12,14 @@ const int SERVO_PIN = 12;      // 게이트 서보 모터
 
 // 게이트 각도 설정
 const int GATE_NORMAL = 90;    // 기본 위치
-const int GATE_A = 0;          // 폐기 (FAIL/TIMEOUT)
-const int GATE_B = 180;        // 재분류 (UNCERTAIN)
+const int GATE_A = 0;          // 폐기 (FAIL)
+const int GATE_B = 180;        // 재분류 (TIMEOUT, UNCERTAIN)
 
 // 객체 생성
 Servo gateServo;
+
+// I2C 주소 0x27, 16열 2행 설정
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 void setup() {
   Serial.begin(9600);
@@ -31,6 +35,12 @@ void setup() {
   gateServo.write(GATE_NORMAL);
 
   digitalWrite(LED_POWER, HIGH);
+
+  // 기존 설정 생략
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("READY...");
 }
 
 void loop() {
@@ -42,6 +52,9 @@ void loop() {
     switch (verdict) {
       case 'P': // VERDICT_PASS
         led_on(HIGH, LOW, LOW);     // Green
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("PASS");
 
         if (!gateServo.attached())
           gateServo.attach(SERVO_PIN);
@@ -56,6 +69,9 @@ void loop() {
       case 'F': // VERDICT_FAIL
         led_on(LOW, HIGH, LOW);     // Red
         triggerBuzzer(1);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("FAIL");
 
         if (!gateServo.attached())
           gateServo.attach(SERVO_PIN);
@@ -72,6 +88,9 @@ void loop() {
       case 'T': // VERDICT_TIMEOUT
         led_on(LOW, LOW, HIGH);      // Yellow ON
         triggerBuzzer(2);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("TIMEOUT");
         
         if (!gateServo.attached())
           gateServo.attach(SERVO_PIN);
@@ -88,6 +107,9 @@ void loop() {
       case 'U': // VERDICT_UNCERTAIN
         led_on(LOW, LOW, HIGH);      // Yellow ON
         triggerBuzzer(2);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("UNCERTAIN");
 
         if (!gateServo.attached())
           gateServo.attach(SERVO_PIN);
@@ -103,6 +125,9 @@ void loop() {
 
       case 'N':
         led_off();
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("READY...");
 
         if (!gateServo.attached())
           gateServo.attach(SERVO_PIN);
@@ -116,6 +141,10 @@ void loop() {
         // 정의되지 않은 데이터 수신 시 유지
         break;
     }
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("READY...");
   }
 }
 
