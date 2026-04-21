@@ -28,7 +28,6 @@ void setup() {
   pinMode(LED_PASS, OUTPUT);
   pinMode(LED_FAIL, OUTPUT);
   pinMode(LED_UNCERTAIN, OUTPUT);
-
   pinMode(BUZZER, OUTPUT);
   
   gateServo.attach(SERVO_PIN);
@@ -36,11 +35,9 @@ void setup() {
 
   digitalWrite(LED_POWER, HIGH);
 
-  // 기존 설정 생략
   lcd.init();
   lcd.backlight();
-  lcd.setCursor(0, 0);
-  lcd.print("READY...");
+  lcd_display("READY...");
 }
 
 void loop() {
@@ -52,102 +49,50 @@ void loop() {
     switch (verdict) {
       case 'P': // VERDICT_PASS
         led_on(HIGH, LOW, LOW);     // Green
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("PASS");
-
-        if (!gateServo.attached())
-          gateServo.attach(SERVO_PIN);
-        delay(500);
-        gateServo.write(GATE_NORMAL);
-        delay(500);
-        gateServo.detach();
-
+        lcd_display("PASS");
+        motor_normal();
         led_off();
         break;
 
       case 'F': // VERDICT_FAIL
         led_on(LOW, HIGH, LOW);     // Red
-        triggerBuzzer(1);
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("FAIL");
-
-        if (!gateServo.attached())
-          gateServo.attach(SERVO_PIN);
-
-        gateServo.write(GATE_A);
-        delay(500);
-        gateServo.write(GATE_NORMAL);
-        delay(500);
-        gateServo.detach();     // 정지 명령어 : 5V 전압 문제 해결용
-
+        buzzer_on(1);
+        lcd_display("FAIL");
+        motor_on(GATE_A);
         led_off();
         break;
 
       case 'T': // VERDICT_TIMEOUT
         led_on(LOW, LOW, HIGH);      // Yellow ON
-        triggerBuzzer(2);
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("TIMEOUT");
-        
-        if (!gateServo.attached())
-          gateServo.attach(SERVO_PIN);
-
-        gateServo.write(GATE_B);
-        delay(500);
-        gateServo.write(GATE_NORMAL);
-        delay(500);
-        gateServo.detach();
-
+        buzzer_on(2);
+        lcd_display("TIMEOUT");
+        motor_on(GATE_B);
         led_off();
         break;
 
       case 'U': // VERDICT_UNCERTAIN
         led_on(LOW, LOW, HIGH);      // Yellow ON
-        triggerBuzzer(2);
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("UNCERTAIN");
-
-        if (!gateServo.attached())
-          gateServo.attach(SERVO_PIN);
-        
-        gateServo.write(GATE_B);
-        delay(500);
-        gateServo.write(GATE_NORMAL);
-        delay(500);
-        gateServo.detach();
-
+        buzzer_on(2);
+        lcd_display("UNCERTAIN");
+        motor_on(GATE_B);
         led_off();
         break;
 
       case 'N':
         led_off();
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("READY...");
-
-        if (!gateServo.attached())
-          gateServo.attach(SERVO_PIN);
-
-        gateServo.write(GATE_NORMAL);
-        delay(500);
-        gateServo.detach();
+        lcd_display("READY...");
+        motor_normal();        
         break;
 
       default:
         // 정의되지 않은 데이터 수신 시 유지
         break;
     }
-
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("READY...");
+    lcd_display("READY...");
   }
 }
 
+// LED 제어
 void led_on(int p, int f, int u) {
   digitalWrite(LED_PASS, p);
   digitalWrite(LED_FAIL, f);
@@ -160,13 +105,40 @@ void led_off(){
   digitalWrite(LED_UNCERTAIN, LOW);
 }
 
-
 // 부저 제어
-void triggerBuzzer(int count) {
+void buzzer_on(int count) {
   for (int i = 0; i < count; i++) {
     tone(BUZZER, 1000);
     delay(100);
     noTone(BUZZER);
     if (count > 1) delay(100);
   }
+}
+
+// 모터 제어
+void motor_on(int gate) {
+  if (!gateServo.attached())
+    gateServo.attach(SERVO_PIN);
+
+  gateServo.write(gate);
+  delay(500);
+  gateServo.write(GATE_NORMAL);
+  delay(500);
+  gateServo.detach();
+}
+
+void motor_normal() {
+  if (!gateServo.attached())
+    gateServo.attach(SERVO_PIN);
+
+  gateServo.write(GATE_NORMAL);
+  delay(500);
+  gateServo.detach();
+}
+
+// LCD 제어
+void lcd_display(const char* notice) {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(notice);
 }

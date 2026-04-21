@@ -20,16 +20,13 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Code.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="Serial.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="Code2.cpp">
+    <ClCompile Include="Local.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="Code3.cpp">
+    <ClCompile Include="test.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

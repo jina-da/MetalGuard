@@ -22,10 +22,9 @@
     <ClInclude Include="SerialClass.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Code.cpp" />
-    <ClCompile Include="Code3.cpp" />
+    <ClCompile Include="Local.cpp" />
     <ClCompile Include="Serial.cpp" />
-    <ClCompile Include="Code2.cpp" />
+    <ClCompile Include="test.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
