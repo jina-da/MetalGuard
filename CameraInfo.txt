@@ -1,8 +1,0 @@
-[CAM1]
-Serial=40101580
-[CAM2]
-Serial=
-[CAM3]
-Serial=
-[CAM4]
-Serial=
