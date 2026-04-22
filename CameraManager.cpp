@@ -22,7 +22,6 @@ CCameraManager::CCameraManager(void)
 
 	// --- 통신 및 상태 관련 초기화 ---
 	m_hSocket = INVALID_SOCKET;
-	m_bIsConnected = false;
 	m_bIsServerConnected = false; // 서버 연결 상태 플래그
 	m_serverIP = "10.10.10.109";
 	m_serverPort = 8000;
@@ -982,13 +981,13 @@ void CCameraManager::DisconnectFromServer()
 		closesocket(m_hSocket);
 		WSACleanup();
 	}
-	m_bIsConnected = false;
+	m_bIsServerConnected = false;
 }
 
 bool CCameraManager::SendImageToServer(int nCamIndex, const cv::Mat& matEntry)
 {
 	// 멤버 변수 사용 시 클래스 내부 함수임을 명시
-	if (!m_bIsConnected || matEntry.empty()) return false;
+	if (!m_bIsServerConnected || matEntry.empty()) return false;
 
 	try {
 		// 1. 이미지 JPG 인코딩
@@ -1087,7 +1086,7 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 
 	// 픽셀 변화량이 너무 작으면 인식하지 않음
 	// 처음 시작 시 카메라 노이즈가 보통 500~1000픽셀 정도 발생하므로 기준을 확실히 둠
-	return (nChangedPixels > 5000);
+	return (nChangedPixels > 500);
 }
 
 void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr& ptrGrabResult)
@@ -1194,11 +1193,23 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 						m_bIsServerConnected = false;
 						return;
 					}
-					send(m_hSocket, jsonPayload.c_str(), (int)jsonPayload.length(), 0);
+					if (send(m_hSocket, jsonPayload.c_str(), (int)jsonPayload.length(), 0) == SOCKET_ERROR) {
+						WriteLog(nCameraIndex, _T("에러"), _T("JSON 전송 실패"));
+						m_bIsServerConnected = false;
+						return;
+					}
 
 					uint32_t netImageLen = htonl((uint32_t)imgBuf.size());
-					send(m_hSocket, (char*)&netImageLen, sizeof(netImageLen), 0);
-					send(m_hSocket, (char*)imgBuf.data(), (int)imgBuf.size(), 0);
+					if (send(m_hSocket, (char*)&netImageLen, sizeof(netImageLen), 0) == SOCKET_ERROR) {
+						WriteLog(nCameraIndex, _T("에러"), _T("이미지 크기 전송 실패"));
+						m_bIsServerConnected = false;
+						return;
+					}
+					if (send(m_hSocket, (char*)imgBuf.data(), (int)imgBuf.size(), 0) == SOCKET_ERROR) {
+						WriteLog(nCameraIndex, _T("에러"), _T("이미지 데이터 전송 실패"));
+						m_bIsServerConnected = false;
+						return;
+					}
 
 					CString strLog;
 					strLog.Format(_T("%d번 이미지 전송 완료"), nShotIndex[nCameraIndex]);

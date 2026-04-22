@@ -33,9 +33,10 @@ struct PacketHeader {
 #pragma pack(pop)
 
 enum class CmdID : uint16_t {
-    IMG_SEND = 201,             // 이미지 전송
-    RESULT_SEND = 301,          // 판정 결과 수신
-    RECLASSIFY_CONFIRM = 401    // 재분류 확정
+    IMG_SEND = 1,    // 촬영 이미지 전송
+    IMG_RECLASSIFY = 2,    // 재분류 이미지 전송
+    RESULT_SEND = 301,  // 판정 결과 수신
+    RECLASSIFY_CONFIRM = 401   // 재분류 확정
 };
 
 class CCameraManager : public CImageEventHandler, public CConfigurationEventHandler
@@ -46,7 +47,6 @@ public:
 
     // --- 통신 관련 멤버 변수 ---
     SOCKET m_hSocket;
-    bool m_bIsConnected;
     std::string m_serverIP;
     int m_serverPort;
 

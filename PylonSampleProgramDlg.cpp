@@ -975,7 +975,7 @@ void CPylonSampleProgramDlg::OnBnClickedExitBtn()
 {
 	// 1. AI 서버 연결 종료 (추가)
 	// 통신 중인 소켓을 먼저 닫아 서버 측의 자원을 정리
-	if (m_CameraManager.m_bIsConnected)
+	if (m_CameraManager.m_bIsServerConnected)
 	{
 		m_CameraManager.DisconnectFromServer();
 	}
