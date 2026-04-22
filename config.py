@@ -27,7 +27,7 @@ PIPELINE_TIMEOUT_MS = 1000
 
 
 # ── 모델 버전 ─────────────────────────────────────────
-MODEL_VERSION_ID = 1
+MODEL_VERSION_ID = 3
 
 # ── MFC 전송 ─────────────────────────────────────────
 SEND_RESULT_TO_MFC = True    # True로 바꾸면 MFC 전송 활성화

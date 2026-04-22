@@ -13,7 +13,7 @@ import logging
 import queue
 import signal
 import sys
-import threading
+# import threading
 
 import config
 from server.tcp_server import TCPServer
@@ -99,24 +99,24 @@ def main():
     # 실제 작업은 모두 쓰레드에서 처리되므로 메인 쓰레드는 시그널 대기
     logger.info("서버 실행 중... (종료: Ctrl+C)")
 
-    # 아두이노 테스트용 입력 루프 (테스트 완료 후 제거)
-    def test_loop():
-        import time
-        time.sleep(2)  # 서버 뜨고 대기
-        print("\n[테스트] p=PASS / f=FAIL / u=UNCERTAIN / t=TIMEOUT / q=종료")
-        while True:
-            cmd = input("[테스트] 입력: ").strip().lower()
-            if cmd == "p":
-                tcp_server.send_verdict_to_arduino("PASS")
-            elif cmd == "f":
-                tcp_server.send_verdict_to_arduino("FAIL")
-            elif cmd == "u":
-                tcp_server.send_verdict_to_arduino("UNCERTAIN")
-            elif cmd == "t":
-                tcp_server.send_verdict_to_arduino("TIMEOUT")
-            elif cmd == "q":
-                break
-    threading.Thread(target=test_loop, daemon=True).start()
+    # # 아두이노 테스트용 입력 루프 (테스트 완료 후 제거)
+    # def test_loop():
+    #     import time
+    #     time.sleep(2)  # 서버 뜨고 대기
+    #     print("\n[테스트] p=PASS / f=FAIL / u=UNCERTAIN / t=TIMEOUT / q=종료")
+    #     while True:
+    #         cmd = input("[테스트] 입력: ").strip().lower()
+    #         if cmd == "p":
+    #             tcp_server.send_verdict_to_arduino("PASS")
+    #         elif cmd == "f":
+    #             tcp_server.send_verdict_to_arduino("FAIL")
+    #         elif cmd == "u":
+    #             tcp_server.send_verdict_to_arduino("UNCERTAIN")
+    #         elif cmd == "t":
+    #             tcp_server.send_verdict_to_arduino("TIMEOUT")
+    #         elif cmd == "q":
+    #             break
+    # threading.Thread(target=test_loop, daemon=True).start()
 
     signal.pause()
 

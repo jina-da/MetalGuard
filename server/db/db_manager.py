@@ -60,6 +60,7 @@ class DBManager:
         image_path: str | None,
         heatmap_path: str | None,
         model_version_id: int,
+        plate_id: int | None = None,
     ) -> int | None:
         """
         inspection_result 테이블에 판정 결과 INSERT.
@@ -73,7 +74,7 @@ class DBManager:
                 verdict, defect_class,
                 prob_normal, prob_crack, prob_hole, prob_rust, prob_scratch,
                 max_prob, inference_ms, pipeline_ms,
-                timeout_flag, image_path, heatmap_path, model_version_id
+                timeout_flag, image_path, heatmap_path, model_version_id, plate_id
             ) VALUES (
                 %s, %s,
                 %s, %s, %s, %s, %s,

@@ -51,6 +51,12 @@ class CmdID:
     PONG               = 502  # 연결 확인 응답 (미정)
     ERROR_RES          = 503  # 에러 응답 (미정)
 
+    # ── 아두이노 동작 완료 알림 (아두이노PC → 운용서버) ──
+    DONE_PASS      = 205  # PASS 동작 완료
+    DONE_FAIL      = 206  # FAIL 서보모터 동작 완료
+    DONE_UNCERTAIN = 207  # UNCERTAIN 서보모터 동작 완료
+    DONE_TIMEOUT   = 208  # TIMEOUT 동작 완료
+
 
 def build_packet(cmd_id: int, body: bytes) -> bytes:
     """

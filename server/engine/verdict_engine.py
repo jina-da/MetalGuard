@@ -185,7 +185,8 @@ class VerdictEngine:
         # 6. 장별 DB 저장 (inspection_result)
         inspection_id = self._save_inspection(
             verdict, defect_class, ai_response,
-            inference_ms, pipeline_ms, timeout_flag
+            inference_ms, pipeline_ms, timeout_flag,
+            plate_id=task.plate_id
         )
 
         # 7. pipeline_log DB 저장 (샘플링 적용)
@@ -282,6 +283,7 @@ class VerdictEngine:
         inference_ms: float,
         pipeline_ms: float,
         timeout_flag: bool,
+        plate_id: int | None = None,
     ) -> int | None:
         """inspection_result INSERT, 생성된 id 반환"""
         return self._db.insert_inspection_result(
@@ -299,6 +301,7 @@ class VerdictEngine:
             image_path=None,
             heatmap_path=None,
             model_version_id=ai_response.get("model_version_id", self._model_version_id),
+            plate_id=plate_id,
         )
 
     def _save_pipeline_log(
