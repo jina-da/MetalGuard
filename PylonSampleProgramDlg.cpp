@@ -17,48 +17,75 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 	{
 		if (pMainDlg->m_CameraManager.m_bRemoveCamera[nCamIndex] == true) break;
 
-		// 이미지가 갱신되었는지 확인
 		if (pMainDlg->m_CameraManager.CheckCaptureEnd(nCamIndex))
 		{
 			pMainDlg->nFrameCount[nCamIndex]++;
 
-			// OnPaint를 거치지 않고 바로 화면에 출력
-			CWnd* pWnd = pMainDlg->GetDlgItem(IDC_CAM0_DISPLAY); // 리소스 ID 확인 필수
+			CWnd* pWnd = pMainDlg->GetDlgItem(IDC_CAM0_DISPLAY);
 			if (pWnd && !pMainDlg->m_CameraManager.m_matLiveImage[nCamIndex].empty())
 			{
 				CRect rect;
 				pWnd->GetClientRect(&rect);
 				CDC* pDC = pWnd->GetDC();
 
-				// OpenCV Mat 리사이즈
-				cv::Mat matResized;
-				cv::resize(pMainDlg->m_CameraManager.m_matLiveImage[nCamIndex], matResized, cv::Size(rect.Width(), rect.Height()));
+				// --- 더블 버퍼링 시작 ---
+				CDC memDC;
+				CBitmap memBitmap;
+				memDC.CreateCompatibleDC(pDC);
+				memBitmap.CreateCompatibleBitmap(pDC, rect.Width(), rect.Height());
+				CBitmap* pOldBitmap = memDC.SelectObject(&memBitmap);
 
-				// 비트맵 정보 설정
+				// 1. 메모리 DC 배경을 검은색으로 채움
+				memDC.FillSolidRect(&rect, RGB(0, 0, 0));
+
+				// 2. 이미지 정보 및 비율 계산
+				cv::Mat& matRaw = pMainDlg->m_CameraManager.m_matLiveImage[nCamIndex];
+				int imgW = matRaw.cols;
+				int imgH = matRaw.rows;
+
+				float fImgAspect = (float)imgW / imgH;
+				float fWinAspect = (float)rect.Width() / rect.Height();
+
+				int drawW, drawH, offsetX = 0, offsetY = 0;
+				if (fImgAspect > fWinAspect) {
+					drawW = rect.Width();
+					drawH = (int)(drawW / fImgAspect);
+					offsetY = (rect.Height() - drawH) / 2;
+				}
+				else {
+					drawH = rect.Height();
+					drawW = (int)(drawH * fImgAspect);
+					offsetX = (rect.Width() - drawW) / 2;
+				}
+
+				// 3. 비트맵 헤더 설정
 				BITMAPINFO bitInfo;
 				memset(&bitInfo, 0, sizeof(BITMAPINFO));
 				bitInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-				bitInfo.bmiHeader.biWidth = matResized.cols;
-				bitInfo.bmiHeader.biHeight = -matResized.rows; // 상하 반전 방지
+				bitInfo.bmiHeader.biWidth = imgW;
+				bitInfo.bmiHeader.biHeight = -imgH;
 				bitInfo.bmiHeader.biPlanes = 1;
 				bitInfo.bmiHeader.biBitCount = 24;
 				bitInfo.bmiHeader.biCompression = BI_RGB;
 
-				// DC에 직접 그리기
-				pDC->SetStretchBltMode(COLORONCOLOR);
-				::SetDIBitsToDevice(pDC->GetSafeHdc(),
-					0, 0, matResized.cols, matResized.rows,
-					0, 0, 0, matResized.rows,
-					matResized.data, &bitInfo, DIB_RGB_COLORS);
+				// 4. 메모리 DC에 이미지 그리기
+				memDC.SetStretchBltMode(COLORONCOLOR);
+				::StretchDIBits(memDC.GetSafeHdc(),
+					offsetX, offsetY, drawW, drawH,
+					0, 0, imgW, imgH,
+					matRaw.data, &bitInfo, DIB_RGB_COLORS, SRCCOPY);
 
+				// 5. 완성된 메모리 비트맵을 실제 화면 DC로 한 번에 복사
+				pDC->BitBlt(0, 0, rect.Width(), rect.Height(), &memDC, 0, 0, SRCCOPY);
+
+				// 리소스 해제
+				memDC.SelectObject(pOldBitmap);
+				memBitmap.DeleteObject();
+				memDC.DeleteDC();
 				pWnd->ReleaseDC(pDC);
 			}
-
-			// 플래그 리셋 (다음 이미지를 받기 위함)
 			pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
 		}
-
-		// CPU 점유율 조절 (150ms 프로젝트이므로 10ms 정도면 충분히 빠름)
 		Sleep(10);
 	}
 	return 0;
@@ -540,7 +567,7 @@ void CPylonSampleProgramDlg::OnBnClickedConnectCameraBtn()
 	{
 		m_ctrlCamList.SetItemText(m_iCameraIndex, 3, _T("Connected"));
 
-		// 4. AI 서버 접속 시도 (연결 유지 방식)
+		// 4. AI 서버 접속 시도 
 		std::string serverIP = "10.10.10.109";
 		int serverPort = 8000;
 
@@ -752,44 +779,89 @@ void CPylonSampleProgramDlg::DisplayCam0(void* pImageBuf)
 
 void CPylonSampleProgramDlg::DisplayCam1(void* pImageBuf)
 {
-	if (pImageBuf == NULL || hdc[1] == NULL) return;
-	bitmapinfo[1]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bitmapinfo[1]->bmiHeader.biWidth = 260;
-	bitmapinfo[1]->bmiHeader.biHeight = -260;
-	bitmapinfo[1]->bmiHeader.biPlanes = 1;
-	bitmapinfo[1]->bmiHeader.biBitCount = 24;
-	bitmapinfo[1]->bmiHeader.biCompression = BI_RGB;
-	bitmapinfo[1]->bmiHeader.biSizeImage = 260 * 260 * 3;
-	SetStretchBltMode(hdc[1], COLORONCOLOR);
-	StretchDIBits(hdc[1], 0, 0, rectStaticClient[1].Width(), rectStaticClient[1].Height(), 0, 0, 260, 260, pImageBuf, bitmapinfo[1], DIB_RGB_COLORS, SRCCOPY);
+	if (pImageBuf == NULL || hdc[0] == NULL) return;
+
+	// 24비트 BGR 이미지에 맞게 헤더 재설정
+	bitmapinfo[0]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bitmapinfo[0]->bmiHeader.biWidth = 260;
+	bitmapinfo[0]->bmiHeader.biHeight = -260; // Top-down
+	bitmapinfo[0]->bmiHeader.biPlanes = 1;
+	bitmapinfo[0]->bmiHeader.biBitCount = 24; // 3채널 컬러
+	bitmapinfo[0]->bmiHeader.biCompression = BI_RGB;
+	bitmapinfo[0]->bmiHeader.biSizeImage = 260 * 260 * 3;
+	bitmapinfo[0]->bmiHeader.biClrUsed = 0;
+
+	SetStretchBltMode(hdc[0], COLORONCOLOR);
+
+	int nRet = StretchDIBits(hdc[0],
+		0, 0, rectStaticClient[0].Width(), rectStaticClient[0].Height(),
+		0, 0, 260, 260,
+		pImageBuf,
+		bitmapinfo[0],
+		DIB_RGB_COLORS,
+		SRCCOPY);
+
+	if (nRet == GDI_ERROR) {
+		TRACE(_T("Cam0 Display Error!\n"));
+	}
 }
 
 void CPylonSampleProgramDlg::DisplayCam2(void* pImageBuf)
 {
-	if (pImageBuf == NULL || hdc[2] == NULL) return;
-	bitmapinfo[2]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bitmapinfo[2]->bmiHeader.biWidth = 260;
-	bitmapinfo[2]->bmiHeader.biHeight = -260;
-	bitmapinfo[2]->bmiHeader.biPlanes = 1;
-	bitmapinfo[2]->bmiHeader.biBitCount = 24;
-	bitmapinfo[2]->bmiHeader.biCompression = BI_RGB;
-	bitmapinfo[2]->bmiHeader.biSizeImage = 260 * 260 * 3;
-	SetStretchBltMode(hdc[2], COLORONCOLOR);
-	StretchDIBits(hdc[2], 0, 0, rectStaticClient[2].Width(), rectStaticClient[2].Height(), 0, 0, 260, 260, pImageBuf, bitmapinfo[2], DIB_RGB_COLORS, SRCCOPY);
+	if (pImageBuf == NULL || hdc[0] == NULL) return;
+
+	// 24비트 BGR 이미지에 맞게 헤더 재설정
+	bitmapinfo[0]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bitmapinfo[0]->bmiHeader.biWidth = 260;
+	bitmapinfo[0]->bmiHeader.biHeight = -260; // Top-down
+	bitmapinfo[0]->bmiHeader.biPlanes = 1;
+	bitmapinfo[0]->bmiHeader.biBitCount = 24; // 3채널 컬러
+	bitmapinfo[0]->bmiHeader.biCompression = BI_RGB;
+	bitmapinfo[0]->bmiHeader.biSizeImage = 260 * 260 * 3;
+	bitmapinfo[0]->bmiHeader.biClrUsed = 0;
+
+	SetStretchBltMode(hdc[0], COLORONCOLOR);
+
+	int nRet = StretchDIBits(hdc[0],
+		0, 0, rectStaticClient[0].Width(), rectStaticClient[0].Height(),
+		0, 0, 260, 260,
+		pImageBuf,
+		bitmapinfo[0],
+		DIB_RGB_COLORS,
+		SRCCOPY);
+
+	if (nRet == GDI_ERROR) {
+		TRACE(_T("Cam0 Display Error!\n"));
+	}
 }
 
 void CPylonSampleProgramDlg::DisplayCam3(void* pImageBuf)
 {
-	if (pImageBuf == NULL || hdc[3] == NULL) return;
-	bitmapinfo[3]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bitmapinfo[3]->bmiHeader.biWidth = 260;
-	bitmapinfo[3]->bmiHeader.biHeight = -260;
-	bitmapinfo[3]->bmiHeader.biPlanes = 1;
-	bitmapinfo[3]->bmiHeader.biBitCount = 24;
-	bitmapinfo[3]->bmiHeader.biCompression = BI_RGB;
-	bitmapinfo[3]->bmiHeader.biSizeImage = 260 * 260 * 3;
-	SetStretchBltMode(hdc[3], COLORONCOLOR);
-	StretchDIBits(hdc[3], 0, 0, rectStaticClient[3].Width(), rectStaticClient[3].Height(), 0, 0, 260, 260, pImageBuf, bitmapinfo[3], DIB_RGB_COLORS, SRCCOPY);
+	if (pImageBuf == NULL || hdc[0] == NULL) return;
+
+	// 24비트 BGR 이미지에 맞게 헤더 재설정
+	bitmapinfo[0]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bitmapinfo[0]->bmiHeader.biWidth = 260;
+	bitmapinfo[0]->bmiHeader.biHeight = -260; // Top-down
+	bitmapinfo[0]->bmiHeader.biPlanes = 1;
+	bitmapinfo[0]->bmiHeader.biBitCount = 24; // 3채널 컬러
+	bitmapinfo[0]->bmiHeader.biCompression = BI_RGB;
+	bitmapinfo[0]->bmiHeader.biSizeImage = 260 * 260 * 3;
+	bitmapinfo[0]->bmiHeader.biClrUsed = 0;
+
+	SetStretchBltMode(hdc[0], COLORONCOLOR);
+
+	int nRet = StretchDIBits(hdc[0],
+		0, 0, rectStaticClient[0].Width(), rectStaticClient[0].Height(),
+		0, 0, 260, 260,
+		pImageBuf,
+		bitmapinfo[0],
+		DIB_RGB_COLORS,
+		SRCCOPY);
+
+	if (nRet == GDI_ERROR) {
+		TRACE(_T("Cam0 Display Error!\n"));
+	}
 }
 
 void CPylonSampleProgramDlg::OnBnClickedCam0Live()
@@ -826,87 +898,97 @@ void CPylonSampleProgramDlg::OnBnClickedCam0Live()
 
 void CPylonSampleProgramDlg::OnBnClickedCam1Live()
 {
-
-	if(m_CameraManager.m_bCamConnectFlag[1] == true)
+	if (m_CameraManager.m_bCamConnectFlag[0] == true)
 	{
-		 bStopThread[1]=(bStopThread[1]+1)&0x01;   
-		 if(bStopThread[1])
-		 {
-			bLiveFlag[1] = true;
-			m_CameraManager.GrabLive(1,0);
-			SetDlgItemText(IDC_CAM1_LIVE,_T("Live_Cam1_Stop"));
-			AfxBeginThread(LiveGrabThreadCam0,&m_nCamIndexBuf[1]);
-		 }
-		 else
-		 {
-			bLiveFlag[1] = false;
-			SetDlgItemText(IDC_CAM1_LIVE,_T("Live_Cam1_Start"));
-			m_CameraManager.LiveStop(1,0);			
-		 }	
+		// 토글 로직 (0 -> 1, 1 -> 0)
+		bStopThread[0] = !bStopThread[0];
+
+		if (bStopThread[0])
+		{
+			bLiveFlag[0] = true;
+			m_CameraManager.GrabLive(0, 0);
+			SetDlgItemText(IDC_CAM0_LIVE, _T("Live_Cam0_Stop"));
+
+			// 인덱스 버퍼 설정 후 스레드 시작
+			m_nCamIndexBuf[0] = 0;
+			AfxBeginThread(LiveGrabThreadCam0, &m_nCamIndexBuf[0]);
+		}
+		else
+		{
+			bLiveFlag[0] = false;
+			SetDlgItemText(IDC_CAM0_LIVE, _T("Live_Cam0_Start"));
+			m_CameraManager.LiveStop(0, 0);
+		}
 	}
 	else
 	{
-		AfxMessageBox(_T("Camera1 Connect를 하세요!!"));
-		CButton *pButton = (CButton*)pMainDlg->GetDlgItem(IDC_CAM1_LIVE);
-		pButton->SetCheck(0);
-
+		AfxMessageBox(_T("Camera0 Connect를 먼저 하세요!!"));
+		CButton* pButton = (CButton*)GetDlgItem(IDC_CAM0_LIVE);
+		if (pButton) pButton->SetCheck(0);
 	}
 }
+
 void CPylonSampleProgramDlg::OnBnClickedCam2Live()
 {
-
-	if(m_CameraManager.m_bCamConnectFlag[2] == true)
+	if (m_CameraManager.m_bCamConnectFlag[0] == true)
 	{
-		 bStopThread[2]=(bStopThread[2]+1)&0x01;   
-		 if(bStopThread[2])
-		 {
-			bLiveFlag[2] = true;
-			m_CameraManager.GrabLive(2,0);
-			SetDlgItemText(IDC_CAM2_LIVE,_T("Live_Cam2_Stop"));
-			AfxBeginThread(LiveGrabThreadCam0,&m_nCamIndexBuf[2]);
-		 }
-		 else
-		 {
-			bLiveFlag[2] = false;
-			SetDlgItemText(IDC_CAM2_LIVE,_T("Live_Cam2_Start"));
-			m_CameraManager.LiveStop(2,0);			
-		 }	
+		// 토글 로직 (0 -> 1, 1 -> 0)
+		bStopThread[0] = !bStopThread[0];
+
+		if (bStopThread[0])
+		{
+			bLiveFlag[0] = true;
+			m_CameraManager.GrabLive(0, 0);
+			SetDlgItemText(IDC_CAM0_LIVE, _T("Live_Cam0_Stop"));
+
+			// 인덱스 버퍼 설정 후 스레드 시작
+			m_nCamIndexBuf[0] = 0;
+			AfxBeginThread(LiveGrabThreadCam0, &m_nCamIndexBuf[0]);
+		}
+		else
+		{
+			bLiveFlag[0] = false;
+			SetDlgItemText(IDC_CAM0_LIVE, _T("Live_Cam0_Start"));
+			m_CameraManager.LiveStop(0, 0);
+		}
 	}
 	else
 	{
-		AfxMessageBox(_T("Camera2 Connect를 하세요!!"));
-		CButton *pButton = (CButton*)pMainDlg->GetDlgItem(IDC_CAM2_LIVE);
-		pButton->SetCheck(0);
-
+		AfxMessageBox(_T("Camera0 Connect를 먼저 하세요!!"));
+		CButton* pButton = (CButton*)GetDlgItem(IDC_CAM0_LIVE);
+		if (pButton) pButton->SetCheck(0);
 	}
 }
 
 void CPylonSampleProgramDlg::OnBnClickedCam3Live()
 {
-
-	if(m_CameraManager.m_bCamConnectFlag[3] == true)
+	if (m_CameraManager.m_bCamConnectFlag[0] == true)
 	{
-		 bStopThread[3]=(bStopThread[3]+1)&0x01;   
-		 if(bStopThread[3])
-		 {
-			bLiveFlag[3] = true;
-			m_CameraManager.GrabLive(3,0);
-			SetDlgItemText(IDC_CAM3_LIVE,_T("Live_Cam3_Stop"));
-			AfxBeginThread(LiveGrabThreadCam0,&m_nCamIndexBuf[3]);
-		 }
-		 else
-		 {
-			bLiveFlag[3] = false;
-			SetDlgItemText(IDC_CAM3_LIVE,_T("Live_Cam3_Start"));
-			m_CameraManager.LiveStop(3,0);			
-		 }	
+		// 토글 로직 (0 -> 1, 1 -> 0)
+		bStopThread[0] = !bStopThread[0];
+
+		if (bStopThread[0])
+		{
+			bLiveFlag[0] = true;
+			m_CameraManager.GrabLive(0, 0);
+			SetDlgItemText(IDC_CAM0_LIVE, _T("Live_Cam0_Stop"));
+
+			// 인덱스 버퍼 설정 후 스레드 시작
+			m_nCamIndexBuf[0] = 0;
+			AfxBeginThread(LiveGrabThreadCam0, &m_nCamIndexBuf[0]);
+		}
+		else
+		{
+			bLiveFlag[0] = false;
+			SetDlgItemText(IDC_CAM0_LIVE, _T("Live_Cam0_Start"));
+			m_CameraManager.LiveStop(0, 0);
+		}
 	}
 	else
 	{
-		AfxMessageBox(_T("Camera3 Connect를 하세요!!"));
-		CButton *pButton = (CButton*)pMainDlg->GetDlgItem(IDC_CAM3_LIVE);
-		pButton->SetCheck(0);
-
+		AfxMessageBox(_T("Camera0 Connect를 먼저 하세요!!"));
+		CButton* pButton = (CButton*)GetDlgItem(IDC_CAM0_LIVE);
+		if (pButton) pButton->SetCheck(0);
 	}
 }
 
