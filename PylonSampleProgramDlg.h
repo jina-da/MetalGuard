@@ -6,7 +6,13 @@
 #include "afxcmn.h"
 #include "afxwin.h"
 
+class CPylonSampleProgramDlg;
 
+struct ReclassifyParam {
+	CPylonSampleProgramDlg* pDlg;
+	cv::Mat matImage; // 스냅샷 이미지
+	int nPlateId;
+};
 
 // CPylonSampleProgramDlg 대화 상자
 class CPylonSampleProgramDlg : public CDialog
@@ -41,6 +47,7 @@ public:
 		int  m_iCamPosition[CAM_NUM];            // 연결된 카메라 순서
 		int  m_iCameraIndex;                     // 프로그램에서 사용할 카메라 인덱스 넘버 
 		int  m_error;
+		int m_nPlateId;
 		CString   m_strCamSerial[CAM_NUM];       // Serial number를 파일에서 가져옴
 
 
@@ -99,4 +106,7 @@ public:
 	afx_msg void OnBnClickedTwoCameraLiveBtn();
 	afx_msg void OnBnClickedCam2Live();
 	afx_msg void OnBnClickedCam3Live();
+	afx_msg void OnStnClickedCam0Info();
+	afx_msg void OnBnClickedReclassifyBtn(); // 버튼 이벤트
+	static UINT ThreadReclassify(LPVOID pParam); // 전송용 백그라운드 스레드
 };

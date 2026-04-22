@@ -28,37 +28,32 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 				pWnd->GetClientRect(&rect);
 				CDC* pDC = pWnd->GetDC();
 
-				// --- 더블 버퍼링 시작 ---
+				// --- 더블 버퍼링 (깜빡임 방지) ---
 				CDC memDC;
 				CBitmap memBitmap;
 				memDC.CreateCompatibleDC(pDC);
 				memBitmap.CreateCompatibleBitmap(pDC, rect.Width(), rect.Height());
 				CBitmap* pOldBitmap = memDC.SelectObject(&memBitmap);
 
-				// 1. 메모리 DC 배경을 검은색으로 채움
 				memDC.FillSolidRect(&rect, RGB(0, 0, 0));
 
-				// 2. 이미지 정보 및 비율 계산
 				cv::Mat& matRaw = pMainDlg->m_CameraManager.m_matLiveImage[nCamIndex];
 				int imgW = matRaw.cols;
 				int imgH = matRaw.rows;
 
 				float fImgAspect = (float)imgW / imgH;
 				float fWinAspect = (float)rect.Width() / rect.Height();
-
 				int drawW, drawH, offsetX = 0, offsetY = 0;
+
 				if (fImgAspect > fWinAspect) {
-					drawW = rect.Width();
-					drawH = (int)(drawW / fImgAspect);
+					drawW = rect.Width(); drawH = (int)(drawW / fImgAspect);
 					offsetY = (rect.Height() - drawH) / 2;
 				}
 				else {
-					drawH = rect.Height();
-					drawW = (int)(drawH * fImgAspect);
+					drawH = rect.Height(); drawW = (int)(drawH * fImgAspect);
 					offsetX = (rect.Width() - drawW) / 2;
 				}
 
-				// 3. 비트맵 헤더 설정
 				BITMAPINFO bitInfo;
 				memset(&bitInfo, 0, sizeof(BITMAPINFO));
 				bitInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -68,17 +63,32 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 				bitInfo.bmiHeader.biBitCount = 24;
 				bitInfo.bmiHeader.biCompression = BI_RGB;
 
-				// 4. 메모리 DC에 이미지 그리기
 				memDC.SetStretchBltMode(COLORONCOLOR);
-				::StretchDIBits(memDC.GetSafeHdc(),
-					offsetX, offsetY, drawW, drawH,
-					0, 0, imgW, imgH,
-					matRaw.data, &bitInfo, DIB_RGB_COLORS, SRCCOPY);
+				::StretchDIBits(memDC.GetSafeHdc(), offsetX, offsetY, drawW, drawH,
+					0, 0, imgW, imgH, matRaw.data, &bitInfo, DIB_RGB_COLORS, SRCCOPY);
 
-				// 5. 완성된 메모리 비트맵을 실제 화면 DC로 한 번에 복사
 				pDC->BitBlt(0, 0, rect.Width(), rect.Height(), &memDC, 0, 0, SRCCOPY);
 
-				// 리소스 해제
+				// --- [자동 재분류 로직 추가] ---
+				// 서버가 인식하지 못했거나 재판정이 필요한 조건 발생 시 자동으로 실행
+				// 예: 이지나님 요청사항인 nChangedPixels > 500 조건 등을 활용
+
+				bool bTriggerReclassify = false;
+				// 예시: if (pMainDlg->m_CameraManager.m_bMissedDetection[nCamIndex]) bTriggerReclassify = true;
+
+				if (bTriggerReclassify && pMainDlg->m_CameraManager.m_bIsServerConnected)
+				{
+					AsyncSendParam* pData = new AsyncSendParam;
+					pData->pMgr = &pMainDlg->m_CameraManager;
+					pData->matImage = matRaw.clone(); // 현재 라이브 프레임 복사
+					pData->nPlateId = pMainDlg->m_nPlateId;
+					pData->nShotIdx = 1;
+					pData->cmd = CmdID::IMG_RECLASSIFY; // 2번 프로토콜로 자동 요청
+
+					AfxBeginThread(CCameraManager::ThreadAsyncSend, pData);
+				}
+				// ------------------------------
+
 				memDC.SelectObject(pOldBitmap);
 				memBitmap.DeleteObject();
 				memDC.DeleteDC();
@@ -1209,3 +1219,40 @@ void CPylonSampleProgramDlg::OnNMClickListCam(NMHDR* pNMHDR, LRESULT* pResult)
 	*pResult = 0;
 }
 
+// PylonSampleProgramDlg.cpp
+
+void CPylonSampleProgramDlg::OnBnClickedReclassifyBtn()
+{
+	// [중요] 카메라가 라이브 상태(bStopThread[0] == true)일 때만 동작
+	// 촬영을 멈추는 것이 아니라, 현재 찍히고 있는 메모리만 복사합니다.
+	if (bStopThread[0] && !m_CameraManager.m_matLiveImage[0].empty())
+	{
+		// 1. 전송 파라미터 생성
+		ReclassifyParam* pParam = new ReclassifyParam;
+		pParam->pDlg = this;
+
+		// 2. 현재 라이브 이미지 복사 (clone을 써야 전송 중에 원본이 변해도 안전함)
+		pParam->matImage = m_CameraManager.m_matLiveImage[0].clone();
+		pParam->nPlateId = m_nPlateId;
+
+		// 3. 별도 스레드로 전송 (이 함수는 실행 즉시 종료되어 UI와 촬영을 방해하지 않음)
+		AfxBeginThread(ThreadReclassify, pParam);
+
+		// 화면 하단에 로그만 살짝 남김 (AfxMessageBox는 화면을 가리니 주의)
+		m_CameraManager.WriteLog(0, _T("정상"), _T("수동 재분류 요청 전송 중..."));
+	}
+}
+
+// 이미지 전송 전용 스레드 (백그라운드 전용)
+UINT CPylonSampleProgramDlg::ThreadReclassify(LPVOID pParam)
+{
+	ReclassifyParam* pData = static_cast<ReclassifyParam*>(pParam);
+	if (pData != nullptr)
+	{
+		// CmdID::IMG_RECLASSIFY(2)를 사용하여 서버에 재분류 요청
+		pData->pDlg->m_CameraManager.SendImageToAI(0, pData->matImage, pData->nPlateId, 1, CmdID::IMG_RECLASSIFY);
+
+		delete pData; // 메모리 해제
+	}
+	return 0;
+}

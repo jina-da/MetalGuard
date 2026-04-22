@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
-// Microsoft Visual C++ generated include file.
-// Used by PylonSampleProgram.rc
+// Microsoft Visual C++에서 생성한 포함 파일입니다.
+// PylonSampleProgram.rc에서 사용되고 있습니다.
 //
 #define IDM_ABOUTBOX                    0x0010
 #define IDD_ABOUTBOX                    100
@@ -19,6 +19,7 @@
 #define IDC_CLOSE_CAM_BTN               1009
 #define IDC_CAMERA0_STATS               1010
 #define IDC_CAM1_LIVE                   1011
+#define IDC_RECLASSIFY_BTN              1011
 #define IDC_CAM0_SCROLLBAR_HORZ         1012
 #define IDC_CAMERA1_STATS               1012
 #define IDC_CAM0_SCROLLBAR_VERT         1013

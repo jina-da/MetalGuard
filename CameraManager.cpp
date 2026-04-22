@@ -1061,6 +1061,56 @@ bool CCameraManager::CheckServerConnection()
 	return true;
 }
 
+void CCameraManager::SendImageToAI(int nCameraIndex, cv::Mat& matImage, int nPlateId, int nShotIdx, CmdID cmd)
+{
+	if (!m_bIsServerConnected || m_hSocket == INVALID_SOCKET) return;
+
+	try {
+		std::vector<uchar> imgBuf;
+		cv::imencode(".jpg", matImage, imgBuf);
+
+		nlohmann::json j;
+		j["client_id"] = "cam_01";
+		j["timestamp"] = "2026-04-22 17:00:00"; // 실제 시간 라이브러리 사용 권장
+		j["plate_id"] = nPlateId;
+		j["shot_index"] = nShotIdx;
+		j["total_shots"] = 4;
+		std::string jsonPayload = j.dump();
+
+		PacketHeader header;
+		header.signature = 0x4D47;
+		header.cmdId = htons((uint16_t)cmd);
+		header.bodySize = htonl((uint32_t)jsonPayload.length());
+
+		// 각 단계별 전송 성공 여부 체크 (이지나님 요청사항)
+		if (send(m_hSocket, (char*)&header, sizeof(header), 0) == SOCKET_ERROR) throw std::runtime_error("H_Err");
+		if (send(m_hSocket, jsonPayload.c_str(), (int)jsonPayload.length(), 0) == SOCKET_ERROR) throw std::runtime_error("J_Err");
+
+		uint32_t netImageLen = htonl((uint32_t)imgBuf.size());
+		if (send(m_hSocket, (char*)&netImageLen, sizeof(netImageLen), 0) == SOCKET_ERROR) throw std::runtime_error("S_Err");
+		if (send(m_hSocket, (char*)imgBuf.data(), (int)imgBuf.size(), 0) == SOCKET_ERROR) throw std::runtime_error("I_Err");
+
+		CString strType = (cmd == CmdID::IMG_RECLASSIFY) ? _T("재분류") : _T("일반");
+		WriteLog(nCameraIndex, _T("정상"), strType + _T(" 전송 완료"));
+	}
+	catch (...) {
+		// 전송 실패 시 통신 플래그만 해제 (카메라 LiveStop은 호출하지 않음)
+		m_bIsServerConnected = false;
+		WriteLog(nCameraIndex, _T("에러"), _T("서버 전송 중단 - 재연결 필요"));
+	}
+}
+
+// 백그라운드 전송 스레드 구현
+UINT CCameraManager::ThreadAsyncSend(LPVOID pParam)
+{
+	AsyncSendParam* pData = static_cast<AsyncSendParam*>(pParam);
+	if (pData) {
+		pData->pMgr->SendImageToAI(0, pData->matImage, pData->nPlateId, pData->nShotIdx, pData->cmd);
+		delete pData;
+	}
+	return 0;
+}
+
 bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 {
 	if (currentFrame.empty()) return false;

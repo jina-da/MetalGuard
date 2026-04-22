@@ -33,10 +33,19 @@ struct PacketHeader {
 #pragma pack(pop)
 
 enum class CmdID : uint16_t {
-    IMG_SEND = 1,    // 촬영 이미지 전송
-    IMG_RECLASSIFY = 2,    // 재분류 이미지 전송
+    IMG_SEND = 1,    // 촬영 이미지 전송 (정상)
+    IMG_RECLASSIFY = 2,    // 재분류 이미지 전송 (미인식/재판정용)
     RESULT_SEND = 301,  // 판정 결과 수신
     RECLASSIFY_CONFIRM = 401   // 재분류 확정
+};
+
+// 스레드 전송용 파라미터 구조체
+struct AsyncSendParam {
+    class CCameraManager* pMgr;
+    cv::Mat matImage;
+    int nPlateId;
+    int nShotIdx;
+    CmdID cmd;
 };
 
 class CCameraManager : public CImageEventHandler, public CConfigurationEventHandler
@@ -55,6 +64,10 @@ public:
     void DisconnectFromServer();
     bool SendImageToServer(int nCamIndex, const cv::Mat& matEntry);
     bool CheckServerConnection();
+
+    // 서버 전송 통합 함수 (nMode가 1이면 일반, 2이면 재분류)
+    void SendImageToAI(int nCameraIndex, cv::Mat& matImage, int nPlateId, int nShotIdx, CmdID cmd);
+    static UINT ThreadAsyncSend(LPVOID pParam); // 전송 전용 백그라운드 스레드
 
     // --- 기존 Camera 관련 멤버 변수 ---
     CTlFactory* m_tlFactory;
