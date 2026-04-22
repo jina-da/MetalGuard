@@ -58,7 +58,7 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 			pMainDlg->m_CameraManager.ReadEnd(nCamIndex);
 		}
 
-		// CPU 점유율 조절 (150ms 프로젝트이므로 10ms 정도면 충분히 빠릅니다)
+		// CPU 점유율 조절 (150ms 프로젝트이므로 10ms 정도면 충분히 빠름)
 		Sleep(10);
 	}
 	return 0;
@@ -96,8 +96,6 @@ END_MESSAGE_MAP()
 
 
 // CPylonSampleProgramDlg 대화 상자
-
-
 
 
 CPylonSampleProgramDlg::CPylonSampleProgramDlg(CWnd* pParent /*=NULL*/)
@@ -190,7 +188,7 @@ BOOL CPylonSampleProgramDlg::OnInitDialog()
 
 	pMainDlg = this;
 
-	// --- 2. 이미지 버퍼(pImageColorDestBuffer) 메모리 할당 ---
+	// --- 2. 이미지 버퍼 메모리 할당 ---
 	for (int i = 0; i < CAM_NUM; i++)
 	{
 		// 각 카메라당 BUF_NUM(3)개의 포인터를 담을 배열 할당
@@ -251,12 +249,11 @@ void CPylonSampleProgramDlg::OnSysCommand(UINT nID, LPARAM lParam)
 	}
 }
 
-// PylonSampleProgramDlg.cpp 내 OnPaint 함수 전체 수정
 void CPylonSampleProgramDlg::OnPaint()
 {
 	if (IsIconic())
 	{
-		CPaintDC dc(this); // 그리기를 위한 디바이스 컨텍스트입니다.
+		CPaintDC dc(this); // 그리기를 위한 디바이스 컨텍스트
 		SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
 		int cxIcon = GetSystemMetrics(SM_CXICON);
 		int cyIcon = GetSystemMetrics(SM_CYICON);
@@ -271,11 +268,10 @@ void CPylonSampleProgramDlg::OnPaint()
 		CPaintDC dc(this);
 		CDialog::OnPaint();
 
-		// [추가] 카메라 0번(Live용) 이미지가 비어있지 않으면 화면에 출력
+		// 카메라 0번(Live용) 이미지가 비어있지 않으면 화면에 출력
 		if (!m_CameraManager.m_matLiveImage[0].empty())
 		{
-			// 이미지를 표시할 Picture Control의 ID를 IDC_CAM0_VIEW라고 가정합니다.
-			// 실제 리소스 뷰에서 확인하신 ID로 변경하세요.
+			// 이미지를 표시
 			CWnd* pWnd = GetDlgItem(IDC_CAM0_DISPLAY);
 			if (pWnd)
 			{

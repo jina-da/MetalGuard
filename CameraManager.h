@@ -54,6 +54,7 @@ public:
     bool ConnectToServer(std::string ip, int port);
     void DisconnectFromServer();
     bool SendImageToServer(int nCamIndex, const cv::Mat& matEntry);
+    bool CheckServerConnection();
 
     // --- 기존 Camera 관련 멤버 변수 ---
     CTlFactory* m_tlFactory;
@@ -79,6 +80,13 @@ public:
     std::string m_strJsonBody[CAM_NUM]; // 서버 전송용 JSON 문자열 (배열)
     cv::Mat m_matLiveImage[CAM_NUM];    // 실시간 라이브 영상 출력을 위한 이미지 버퍼
     DWORD m_dwLastSendTime[CAM_NUM]; // 각 카메라별 마지막 전송 시간을 저장
+
+    bool    m_bObjectDetected[CAM_NUM];   // 물체 감지 상태 플래그
+    cv::Mat m_matPrevFrame[CAM_NUM];      // 이전 프레임 저장 (차이 비교용)
+    int     m_nTriggeredShotCount[CAM_NUM]; // 감지 후 현재까지 찍은 횟수
+
+    // 물체 감지 함수 (내부 사용)
+    bool DetectObject(int nCamIndex, cv::Mat& currentFrame);
 
     // --- log 관련 변수 ---
     bool bLogUse;
