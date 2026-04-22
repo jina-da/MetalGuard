@@ -193,7 +193,7 @@ class InferenceEngine:
             log.info("FP16 추론 활성화")
 
         self.model.eval()
-        self.model_version_id = ckpt.get('result', {}).get('model_version_id', 1)
+        self.model_version_id = ckpt.get('result', {}).get('model_version_id', 3)
 
         # torch.compile()
         if hasattr(torch, 'compile'):
