@@ -35,16 +35,9 @@ class CmdID:
     VERDICT_PASS       = 201  # 정상: "P\n"
     VERDICT_FAIL       = 202  # 불량: "F\n"
     VERDICT_UNCERTAIN  = 203  # 미분류: "U\n"
-    VERDICT_TIMEOUT    = 204  # 타임아웃(150ms 초과): "T\n"
 
     # ── MFC 판정 결과 전송 ────────────────────
     RESULT_SEND        = 301  # 판정 결과: 운용서버 → MFC
-
-    # ── 재분류 ───────────────────────────────
-    RECLASSIFY_CONFIRM     = 401  # 재분류 확정: MFC → 운용서버
-    RECLASSIFY_CONFIRM_RES = 402  # 재분류 확정 응답: 운용서버 → MFC (미정)
-    UNCERTAIN_LIST_REQ     = 403  # UNCERTAIN 목록 요청: MFC → 운용서버 (미정)
-    UNCERTAIN_LIST_RES     = 404  # UNCERTAIN 목록 응답: 운용서버 → MFC (미정)
 
     # ── 시스템 ───────────────────────────────
     PING               = 501  # 연결 확인 (미정)
@@ -55,7 +48,6 @@ class CmdID:
     DONE_PASS      = 205  # PASS 동작 완료
     DONE_FAIL      = 206  # FAIL 서보모터 동작 완료
     DONE_UNCERTAIN = 207  # UNCERTAIN 서보모터 동작 완료
-    DONE_TIMEOUT   = 208  # TIMEOUT 동작 완료
 
 
 def build_packet(cmd_id: int, body: bytes) -> bytes:

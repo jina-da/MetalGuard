@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 class ImageTask:
     """카메라에서 받은 이미지 1건. Queue에 적재되어 판정 엔진으로 전달됨."""
     cmd_id: int                # CmdID.IMG_SEND | CmdID.IMG_RECLASSIFY
-    mode: str                  # "inspect" | "reclassify"
     inspection_id: int | None  # 재분류 시 원본 판정 ID, 첫 분류는 None
     timestamp: str             # 카메라 촬영 타임스탬프
     client_id: str             # 카메라 클라이언트 ID
@@ -67,7 +66,6 @@ class CameraHandler:
         # ImageTask 생성 후 Queue 적재
         task = ImageTask(
             cmd_id=cmd_id,
-            mode=body.get("mode", "inspect"),
             inspection_id=body.get("inspection_id"),
             timestamp=body.get("timestamp", ""),
             client_id=body.get("client_id", "unknown"),
@@ -77,8 +75,8 @@ class CameraHandler:
             total_shots=body.get("total_shots"),  # 총 촬영 장수
         )
         self.image_queue.put(task)
-        logger.info(
-            f"[CameraHandler] Queue 적재: mode={task.mode} "
+        logger.debug(
+            f"[CameraHandler] Queue 적재: cmd_id={task.cmd_id} "
             f"plate={task.plate_id} shot={task.shot_index}/{task.total_shots} "
             f"size={image_size}bytes client={task.client_id}"
         )

@@ -18,7 +18,6 @@ import config
 from constants import CmdID, PACKET_HEADER_SIZE, parse_header, build_packet
 from server.db.db_manager import DBManager
 from server.handlers.camera_handler import CameraHandler
-from server.handlers.mfc_handler import handle_reclassify_confirm
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +89,7 @@ class TCPServer:
                 raw_header = self._recv_exact(sock, PACKET_HEADER_SIZE)
                 if raw_header is None:
                     break
-                logger.info(f"수신 raw 헤더: {raw_header.hex()}")
+                logger.debug(f"수신 raw 헤더: {raw_header.hex()}")
 
                 # 2. 헤더 파싱 (시그니처 검증 포함)
                 try:
@@ -131,16 +130,12 @@ class TCPServer:
 
             # ── 이미지 전송 ───────────────────────────
             case CmdID.IMG_SEND | CmdID.IMG_RECLASSIFY:
-                # MFC 소켓 등록 (첫 이미지 전송 시 MFC로 간주)
+                # MFC+카메라 소켓 등록 (첫 이미지 수신 시 등록)
                 with self.mfc_lock:
                     if self.mfc_client_sock is None:
                         self.mfc_client_sock = sock
                         logger.info(f"[{addr}] MFC 소켓 등록")
                 self.camera_handler.handle_image(sock, cmd_id, body)
-
-            # ── 재분류 확정 ───────────────────────────
-            case CmdID.RECLASSIFY_CONFIRM:
-                handle_reclassify_confirm(sock, body, self.db_manager)
 
             # ── 아두이노 클라이언트 연결 확인 ──────────
             # 희창님 PC가 연결 후 PING(501) 전송 → 아두이노 소켓으로 등록
@@ -165,8 +160,6 @@ class TCPServer:
             case CmdID.DONE_UNCERTAIN:
                 logger.info(f"[{addr}] DONE_UNCERTAIN 수신 - 아두이노 UNCERTAIN 서보모터 동작 완료")
 
-            case CmdID.DONE_TIMEOUT:
-                logger.info(f"[{addr}] DONE_TIMEOUT 수신 - 아두이노 TIMEOUT 동작 완료")
 
             # ── 미정 항목 ─────────────────────────────
             case CmdID.UNCERTAIN_LIST_REQ:
@@ -184,34 +177,6 @@ class TCPServer:
         """아두이노 클라이언트 소켓 반환. verdict_engine에서 판정 결과 전송 시 호출."""
         with self.arduino_lock:
             return self.arduino_client_sock
-
-    # # 테스트용
-    # def send_verdict_to_arduino(self, verdict: str) -> bool:
-    #     """테스트용 — 등록된 아두이노 클라이언트 소켓으로 직접 VERDICT 패킷 전송."""
-    #     verdict_cmd_map = {
-    #         "PASS":      CmdID.VERDICT_PASS,
-    #         "FAIL":      CmdID.VERDICT_FAIL,
-    #         "UNCERTAIN": CmdID.VERDICT_UNCERTAIN,
-    #         "TIMEOUT":   CmdID.VERDICT_TIMEOUT,
-    #     }
-    #     cmd_id = verdict_cmd_map.get(verdict)
-    #     if cmd_id is None:
-    #         logger.error(f"알 수 없는 판정값: {verdict}")
-    #         return False
-
-    #     with self.arduino_lock:
-    #         if self.arduino_client_sock is None:
-    #             logger.warning("아두이노 클라이언트 미연결")
-    #             return False
-    #         try:
-    #             packet = build_packet(cmd_id, b"")
-    #             self.arduino_client_sock.sendall(packet)
-    #             logger.info(f"테스트 전송: {verdict} (cmdId={cmd_id})")
-    #             return True
-    #         except Exception as e:
-    #             logger.error(f"테스트 전송 실패: {e}")
-    #             return False
-
 
     def stop(self):
         """서버 종료."""

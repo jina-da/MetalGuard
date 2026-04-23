@@ -32,19 +32,22 @@ logger = logging.getLogger(__name__)
 # AI 응답 불량 확률 키 목록
 DEFECT_KEYS = ["prob_crack", "prob_hole", "prob_rust", "prob_scratch"]
 
+PLATE_BUFFER_EXPIRE_SEC = 4.0  # 버퍼 만료 시간 (철판 목표 1000ms + 여유)
+
 
 class PlateBuffer:
     """
     철판 1개 분량의 추론 결과를 누적하는 버퍼.
     plate_id별로 생성되어 _plate_buffer dict에 저장됨.
     """
-    def __init__(self, plate_id: int, total_shots: int):
+    def __init__(self, plate_id: int, total_shots: int, is_reclassify: bool = False):
         self.plate_id = plate_id
         self.total_shots = total_shots                    # 수신 예정 총 장수
         self.results: list[dict] = []                    # 장별 추론 결과 누적
         self.verdicts: list[str] = []                    # 장별 판정 결과 누적
         self.defect_classes: list[str] = []              # 장별 불량 클래스 누적
         self.first_received_at: float = time.monotonic() # 첫 장 수신 시점 (파이프라인 측정용)
+        self.is_reclassify: bool = is_reclassify
 
     def add(self, verdict: str, defect_class: str, ai_response: dict) -> None:
         """장별 결과 추가."""
@@ -56,20 +59,13 @@ class PlateBuffer:
         """N장이 모두 수신됐는지 확인."""
         return len(self.results) >= self.total_shots
 
-    def get_final_verdict(self) -> tuple[str, str]:
-        """
-        종합 판정.
-        - FAIL 1개라도 있으면 → FAIL (가장 먼저 나온 불량 클래스 반환)
-        - FAIL 없고 UNCERTAIN 있으면 → UNCERTAIN
-        - 전부 PASS → PASS
-
-        Returns:
-            (final_verdict, final_defect_class)
-        """
+    def get_final_verdict(self, is_reclassify: bool = False) -> tuple[str, str]:
         if "FAIL" in self.verdicts:
             fail_idx = self.verdicts.index("FAIL")
             return "FAIL", self.defect_classes[fail_idx]
         elif "UNCERTAIN" in self.verdicts:
+            if is_reclassify:
+                return "FAIL", "unknown"  # 재분류 UNCERTAIN → FAIL
             return "UNCERTAIN", "unknown"
         else:
             return "PASS", "normal"
@@ -134,6 +130,7 @@ class VerdictEngine:
             try:
                 task: ImageTask = self._queue.get(timeout=0.5)
             except queue.Empty:
+                self._cleanup_expired_buffers()  # Queue 비었을 때 만료 버퍼 정리
                 continue
 
             try:
@@ -142,6 +139,36 @@ class VerdictEngine:
                 logger.error(f"[VerdictEngine] 처리 중 예외: {e}")
             finally:
                 self._queue.task_done()
+
+    def _cleanup_expired_buffers(self) -> None:
+        """만료된 PlateBuffer 정리. Queue 비었을 때 주기적으로 호출."""
+        now = time.monotonic()
+        with self._plate_lock:
+            expired = [
+                pid for pid, buf in self._plate_buffer.items()
+                if now - buf.first_received_at > PLATE_BUFFER_EXPIRE_SEC
+            ]
+            for plate_id in expired:
+                buf = self._plate_buffer[plate_id]
+                verdict_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                if len(buf.results) == 0:
+                    # 버퍼만 생성되고 아무것도 안 쌓인 경우
+                    logger.warning(f"[VerdictEngine] 버퍼 만료 (0장): plate={plate_id}, 전송 스킵")
+                    del self._plate_buffer[plate_id]
+                    continue
+
+                # 모인 장수로 종합 판정
+                final_verdict, final_defect_class = buf.get_final_verdict(is_reclassify=buf.is_reclassify)
+
+                logger.warning(
+                    f"[VerdictEngine] 버퍼 만료 강제 판정: plate={plate_id} | "
+                    f"{final_verdict} | shots={len(buf.results)}/{buf.total_shots}"
+                )
+
+                self._send_to_mfc(final_verdict, final_defect_class, verdict_time)
+                self._send_to_arduino(final_verdict)
+                del self._plate_buffer[plate_id]
 
     def _process(self, task: ImageTask) -> None:
         """
@@ -154,10 +181,9 @@ class VerdictEngine:
         # 1. AI 추론 요청 (INFER_REQ → INFER_RES)
         ai_response = self._ai.infer(task.image_bytes, task.inspection_id)
 
-        timeout_flag = ai_response is None
-        if timeout_flag:
-            logger.error(f"[VerdictEngine] AI 응답 없음 (타임아웃): client={task.client_id}")
-            ai_response = {}
+        if ai_response is None:
+            logger.error(f"[VerdictEngine] AI 응답 없음, 해당 장 스킵: client={task.client_id}")
+            return
 
         # 2. AI 서버가 준 inference_ms 사용
         inference_ms: float = ai_response.get("inference_ms", 0.0)
@@ -173,35 +199,38 @@ class VerdictEngine:
                 f"shot={task.shot_index}/{task.total_shots} client={task.client_id}"
             )
 
-        # 5. 장별 터미널 로그
+        mode = "재분류" if task.cmd_id == CmdID.IMG_RECLASSIFY else "분류"
+
+        # 5. 장별 DB 저장 (inspection_result) - 로그에 db_id 포함하기 위해 먼저 실행
+        inspection_id = self._save_inspection(
+            verdict, defect_class, ai_response,
+            inference_ms, pipeline_ms,
+            plate_id=task.plate_id,
+            is_reclassify=task.cmd_id == CmdID.IMG_RECLASSIFY,
+        )
+
+        # 6. 장별 터미널 로그 (cmd_id + db_id 포함, 1줄 요약)
         logger.info(
-            f"[장별판정] {verdict_time} | plate={task.plate_id} "
+            f"[장별판정][{mode}] plate={task.plate_id} "
             f"shot={task.shot_index}/{task.total_shots} | "
             f"{verdict} | defect={defect_class} | "
             f"normal={ai_response.get('prob_normal', 0):.4f} | "
-            f"inference={inference_ms:.1f}ms | pipeline={pipeline_ms:.1f}ms"
-        )
-
-        # 6. 장별 DB 저장 (inspection_result)
-        inspection_id = self._save_inspection(
-            verdict, defect_class, ai_response,
-            inference_ms, pipeline_ms, timeout_flag,
-            plate_id=task.plate_id
+            f"infer={inference_ms:.1f}ms | pipe={pipeline_ms:.1f}ms | "
+            f"cmd={task.cmd_id} | db={inspection_id}"
         )
 
         # 7. pipeline_log DB 저장 (샘플링 적용)
         if inspection_id:
-            self._save_pipeline_log(inspection_id, inference_ms, pipeline_ms, timeout_flag)
+            self._save_pipeline_log(inspection_id, inference_ms, pipeline_ms)
 
         # 8. plate 버퍼에 누적 → N장 완료 시 종합 판정
         # plate_id가 없으면 (구버전 호환) 즉시 전송
         if task.plate_id is None:
             self._send_to_mfc(verdict, defect_class, verdict_time)
-            arduino_verdict = "TIMEOUT" if timeout_flag else verdict
-            self._send_to_arduino(arduino_verdict)
             return
 
-        self._accumulate_and_finalize(task, verdict, defect_class, ai_response, timeout_flag)
+        is_reclassify = task.cmd_id == CmdID.IMG_RECLASSIFY 
+        self._accumulate_and_finalize(task, verdict, defect_class, ai_response, is_reclassify)
 
     def _accumulate_and_finalize(
         self,
@@ -209,7 +238,7 @@ class VerdictEngine:
         verdict: str,
         defect_class: str,
         ai_response: dict,
-        timeout_flag: bool,
+        is_reclassify: bool = False,
     ) -> None:
         """
         plate 버퍼에 장별 결과 누적.
@@ -220,18 +249,19 @@ class VerdictEngine:
 
             # 버퍼 없으면 새로 생성
             if plate_id not in self._plate_buffer:
-                self._plate_buffer[plate_id] = PlateBuffer(plate_id, task.total_shots)
+                self._plate_buffer[plate_id] = PlateBuffer(plate_id, task.total_shots, is_reclassify=is_reclassify)
 
             buf = self._plate_buffer[plate_id]
             buf.add(verdict, defect_class, ai_response)
 
             # N장 완료 or 타임아웃 → 종합 판정
-            if buf.is_complete() or timeout_flag:
-                final_verdict, final_defect_class = buf.get_final_verdict()
+            if buf.is_complete():
+                final_verdict, final_defect_class = buf.get_final_verdict(is_reclassify=is_reclassify)
                 verdict_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+                mode = "재분류" if is_reclassify else "분류"
                 logger.info(
-                    f"[종합판정] plate={plate_id} | {final_verdict} | "
+                    f"[종합판정][{mode}] plate={plate_id} | {final_verdict} | "
                     f"defect={final_defect_class} | "
                     f"shots={len(buf.results)}/{buf.total_shots}"
                 )
@@ -240,8 +270,7 @@ class VerdictEngine:
                 self._send_to_mfc(final_verdict, final_defect_class, verdict_time)
 
                 # 아두이노 전송
-                arduino_verdict = "TIMEOUT" if timeout_flag else final_verdict
-                self._send_to_arduino(arduino_verdict)
+                self._send_to_arduino(final_verdict)
 
                 # 버퍼 제거 (메모리 정리)
                 del self._plate_buffer[plate_id]
@@ -282,8 +311,8 @@ class VerdictEngine:
         ai_response: dict,
         inference_ms: float,
         pipeline_ms: float,
-        timeout_flag: bool,
         plate_id: int | None = None,
+        is_reclassify: bool = False,
     ) -> int | None:
         """inspection_result INSERT, 생성된 id 반환"""
         return self._db.insert_inspection_result(
@@ -297,11 +326,11 @@ class VerdictEngine:
             max_prob=max(ai_response.get(k, 0.0) for k in ["prob_normal"] + DEFECT_KEYS),
             inference_ms=round(inference_ms, 2),
             pipeline_ms=round(pipeline_ms, 2),
-            timeout_flag=timeout_flag,
             image_path=None,
             heatmap_path=None,
             model_version_id=ai_response.get("model_version_id", self._model_version_id),
             plate_id=plate_id,
+            is_reclassify=is_reclassify,
         )
 
     def _save_pipeline_log(
@@ -309,23 +338,18 @@ class VerdictEngine:
         inspection_id: int,
         inference_ms: float,
         pipeline_ms: float,
-        timeout_flag: bool,
     ) -> None:
         """
         pipeline_log INSERT.
-        - 타임아웃 또는 PIPELINE_TIMEOUT_MS 초과 → 전수 저장
         - 정상 건 → 100건당 1건 샘플링
         """
-        force_save = timeout_flag or pipeline_ms > config.PIPELINE_TIMEOUT_MS
-
-        if not force_save:
-            self._normal_count += 1
-            if self._normal_count % 100 != 0:
-                return
+        self._normal_count += 1
+        if self._normal_count % 100 != 0:
+            return
 
         self._db.insert_pipeline_log(
             inspection_id=inspection_id,
-            is_sampled=not force_save,
+            is_sampled=True,
             capture_ms=None,
             transfer_ms=None,
             preprocess_ms=None,
@@ -357,14 +381,14 @@ class VerdictEngine:
         send_result_to_mfc(mfc_conn, payload)
 
     # ──────────────────────────────────────────────
-    # 아두이노 전송 (VERDICT_PASS/FAIL/UNCERTAIN/TIMEOUT)
+    # 아두이노 전송 (VERDICT_PASS/FAIL/UNCERTAIN)
     # ──────────────────────────────────────────────
 
     def _send_to_arduino(self, verdict: str) -> None:
         """
         아두이노 클라이언트(희창님 PC)로 판정 결과 패킷 전송.
         PASS→VERDICT_PASS(201) / FAIL→VERDICT_FAIL(202)
-        UNCERTAIN→VERDICT_UNCERTAIN(203) / TIMEOUT→VERDICT_TIMEOUT(204)
+        UNCERTAIN→VERDICT_UNCERTAIN(203)
         body 없이 cmdId만 전송, 희창님 PC가 받아서 아두이노로 시리얼 전달.
         """
         arduino_conn = self._get_arduino_conn()
@@ -377,7 +401,6 @@ class VerdictEngine:
             "PASS":      CmdID.VERDICT_PASS,
             "FAIL":      CmdID.VERDICT_FAIL,
             "UNCERTAIN": CmdID.VERDICT_UNCERTAIN,
-            "TIMEOUT":   CmdID.VERDICT_TIMEOUT,
         }
         cmd_id = verdict_cmd_map.get(verdict)
         if cmd_id is None:

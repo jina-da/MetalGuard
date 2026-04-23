@@ -56,11 +56,11 @@ class DBManager:
         max_prob: float,
         inference_ms: float,
         pipeline_ms: float,
-        timeout_flag: bool,
         image_path: str | None,
         heatmap_path: str | None,
         model_version_id: int,
         plate_id: int | None = None,
+        is_reclassify: bool = False,
     ) -> int | None:
         """
         inspection_result 테이블에 판정 결과 INSERT.
@@ -74,12 +74,14 @@ class DBManager:
                 verdict, defect_class,
                 prob_normal, prob_crack, prob_hole, prob_rust, prob_scratch,
                 max_prob, inference_ms, pipeline_ms,
-                timeout_flag, image_path, heatmap_path, model_version_id, plate_id
+                image_path, heatmap_path, model_version_id, plate_id,
+                is_reclassify
             ) VALUES (
                 %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s,
-                %s, %s, %s, %s
+                %s, %s, %s, %s,
+                %s
             )
         """
         # params 분리: 재시도 시 동일 파라미터 재사용
@@ -87,14 +89,13 @@ class DBManager:
             verdict, defect_class,
             prob_normal, prob_crack, prob_hole, prob_rust, prob_scratch,
             max_prob, inference_ms, pipeline_ms,
-            1 if timeout_flag else 0,
-            image_path, heatmap_path, model_version_id
+            image_path, heatmap_path, model_version_id, plate_id,
+            1 if is_reclassify else 0
         )
         try:
             with self.conn.cursor() as cursor:
                 cursor.execute(sql, params)
                 new_id = cursor.lastrowid  # INSERT된 레코드 id
-                logger.info(f"inspection_result INSERT 완료: id={new_id} verdict={verdict}")
                 return new_id
         except Exception as e:
             # 연결 끊김 등 INSERT 실패 시 재연결 후 1회 재시도
@@ -104,7 +105,7 @@ class DBManager:
                     with self.conn.cursor() as cursor:
                         cursor.execute(sql, params)
                         new_id = cursor.lastrowid
-                        logger.info(f"inspection_result INSERT 재시도 성공: id={new_id}")
+                        logger.debug(f"inspection_result INSERT 재시도 성공: id={new_id}")
                         return new_id
                 except Exception as e2:
                     logger.error(f"inspection_result INSERT 재시도 실패: {e2}")
@@ -148,7 +149,7 @@ class DBManager:
         try:
             with self.conn.cursor() as cursor:
                 cursor.execute(sql, params)
-                logger.info(f"pipeline_log INSERT 완료: inspection_id={inspection_id}")
+                logger.debug(f"pipeline_log INSERT 완료: inspection_id={inspection_id}")
                 return True
         except Exception as e:
             # 연결 끊김 등 INSERT 실패 시 재연결 후 1회 재시도
@@ -157,51 +158,12 @@ class DBManager:
                 try:
                     with self.conn.cursor() as cursor:
                         cursor.execute(sql, params)
-                        logger.info(f"pipeline_log INSERT 재시도 성공: inspection_id={inspection_id}")
+                        logger.debug(f"pipeline_log INSERT 재시도 성공: inspection_id={inspection_id}")
                         return True
                 except Exception as e2:
                     logger.error(f"pipeline_log INSERT 재시도 실패: {e2}")
             return False
 
-    def insert_reclassify_result(
-        self,
-        inspection_id: int,
-        final_verdict: str,
-        final_defect_class: str,
-        confidence: float,
-        reason: str,
-    ) -> bool:
-        """재분류 결과 INSERT. MFC에서 수동 판정 확정 시 호출."""
-        sql = """
-            INSERT INTO reclassify_result (
-                inspection_id, final_verdict, final_defect_class, confidence, reason
-            ) VALUES (%s, %s, %s, %s, %s)
-        """
-        # params 분리: 재시도 시 동일 파라미터 재사용
-        params = (
-            inspection_id, final_verdict,
-            final_defect_class, confidence, reason
-        )
-        try:
-            with self.conn.cursor() as cursor:
-                cursor.execute(sql, params)
-                logger.info(
-                    f"reclassify_result INSERT 완료: "
-                    f"inspection_id={inspection_id} final={final_verdict}"
-                )
-                return True
-        except Exception as e:
-            # 연결 끊김 등 INSERT 실패 시 재연결 후 1회 재시도
-            logger.warning(f"reclassify_result INSERT 실패, 재연결 후 재시도: {e}")
-            if self.reconnect():
-                try:
-                    with self.conn.cursor() as cursor:
-                        cursor.execute(sql, params)
-                        logger.info(f"reclassify_result INSERT 재시도 성공: inspection_id={inspection_id}")
-                        return True
-                except Exception as e2:
-                    logger.error(f"reclassify_result INSERT 재시도 실패: {e2}")
-            return False
 
     def close(self) -> None:
         """DB 연결 종료."""

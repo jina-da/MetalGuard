@@ -13,7 +13,6 @@ import logging
 import queue
 import signal
 import sys
-# import threading
 
 import config
 from server.tcp_server import TCPServer
@@ -25,6 +24,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
 )
+# [DEBUG 모드] 필요 시 아래 주석 해제 → server.* 패키지 DEBUG 로그 출력
+# 외부 라이브러리(pymysql 등)는 INFO 유지됨
+# logging.getLogger("server").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +40,7 @@ def main():
     image_queue: queue.Queue = queue.Queue()
 
     # ── 1. DB 연결 ────────────────────────────────
-    # inspection_result, pipeline_log, reclassify_result 테이블 사용
+    # inspection_result, pipeline_log 테이블 사용
     db_manager = DBManager()
     if not db_manager.connect():
         logger.error("DB 연결 실패. 서버를 종료합니다.")
@@ -98,26 +100,6 @@ def main():
     # ── 7. 메인 루프 대기 ─────────────────────────
     # 실제 작업은 모두 쓰레드에서 처리되므로 메인 쓰레드는 시그널 대기
     logger.info("서버 실행 중... (종료: Ctrl+C)")
-
-    # # 아두이노 테스트용 입력 루프 (테스트 완료 후 제거)
-    # def test_loop():
-    #     import time
-    #     time.sleep(2)  # 서버 뜨고 대기
-    #     print("\n[테스트] p=PASS / f=FAIL / u=UNCERTAIN / t=TIMEOUT / q=종료")
-    #     while True:
-    #         cmd = input("[테스트] 입력: ").strip().lower()
-    #         if cmd == "p":
-    #             tcp_server.send_verdict_to_arduino("PASS")
-    #         elif cmd == "f":
-    #             tcp_server.send_verdict_to_arduino("FAIL")
-    #         elif cmd == "u":
-    #             tcp_server.send_verdict_to_arduino("UNCERTAIN")
-    #         elif cmd == "t":
-    #             tcp_server.send_verdict_to_arduino("TIMEOUT")
-    #         elif cmd == "q":
-    #             break
-    # threading.Thread(target=test_loop, daemon=True).start()
-
     signal.pause()
 
 
