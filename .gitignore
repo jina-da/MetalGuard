@@ -82,3 +82,8 @@ desktop.ini
 dist/
 build/
 *.egg-info/
+
+
+# assets 폴더 자체와 그 안의 모든 파일을 예외로 처리
+!assets/
+!assets/**
