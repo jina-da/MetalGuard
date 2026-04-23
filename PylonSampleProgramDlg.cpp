@@ -70,10 +70,12 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 
 				pDC->BitBlt(0, 0, rect.Width(), rect.Height(), &memDC, 0, 0, SRCCOPY);
 
-				// --- 자동 재분류 로직 추가 ---
+				// --- [자동 재분류 로직 추가] ---
 				// 서버가 인식하지 못했거나 재판정이 필요한 조건 발생 시 자동으로 실행
+				// 예: 이지나님 요청사항인 nChangedPixels > 500 조건 등을 활용
 
 				bool bTriggerReclassify = false;
+				// 예시: if (pMainDlg->m_CameraManager.m_bMissedDetection[nCamIndex]) bTriggerReclassify = true;
 
 				if (bTriggerReclassify && pMainDlg->m_CameraManager.m_bIsServerConnected)
 				{

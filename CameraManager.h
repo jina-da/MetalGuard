@@ -15,6 +15,8 @@
 #include <string>
 #include <stdint.h>
 
+#define WM_USER_ADD_LOG (WM_USER + 101)
+
 #pragma comment(lib, "ws2_32.lib")
 
 using namespace Pylon;
@@ -172,6 +174,7 @@ public:
     int SaveImage(int nFileFormat, unsigned char* pImage, char* filename, int nPixelType, int width, int height, int nColorband);
 
     static UINT LiveThread(void* lParam);
+    static UINT ThreadReceiveFromServer(LPVOID pParam);
 
     int Hour, Min, Sec; // 시간 정보 변수 유지
 

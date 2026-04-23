@@ -439,37 +439,42 @@ int CCameraManager::LiveStop(int nCamIndex, int nMode)
 
 void CCameraManager::WriteLog(int nCamIdx, CString strStatus, CString strDetail)
 {
-	// 1. 시간 계산 및 포맷팅
+	// 시간 계산 및 포맷팅
 	CTime t = CTime::GetCurrentTime();
 	int Hour = t.GetHour();
 	int Min = t.GetMinute();
 	int Sec = t.GetSecond();
 
-	// 2. Visual Studio 출력창(Output) 표시
+	// Visual Studio 출력창(Output) 표시
 	CString strConsole;
 	strConsole.Format(_T("%s: [%04d-%02d-%02d %02d:%02d:%02d] CAM%d: %s\n"),
 		strStatus, t.GetYear(), t.GetMonth(), t.GetDay(), Hour, Min, Sec, nCamIdx, strDetail);
 	OutputDebugString(strConsole);
 
-	// 3. 파일 기록 (유지)
+	// 파일 기록
 	if (log != NULL)
 	{
 		fprintf(log, "[%02d:%02d:%02d] [ CAM : %d ] [%s] %s\n", Hour, Min, Sec, nCamIdx, (LPCSTR)CT2A(strStatus), (LPCSTR)CT2A(strDetail));
 		fflush(log);
 	}
 
-	// 4. UI 리스트박스 출력 (전역 핸들 사용)
+	// UI 리스트박스 출력 (전역 핸들 사용)
 	if (g_hMainWnd != NULL && ::IsWindow(g_hMainWnd))
 	{
-		// 수정한 ID인 IDC_LOG_LIST를 사용합니다.
 		HWND hWndList = ::GetDlgItem(g_hMainWnd, IDC_LIST_LOG);
 
 		if (hWndList != NULL && ::IsWindow(hWndList))
 		{
 			CString strListLine;
-			strListLine.Format(_T("[%02d:%02d:%02d] CAM%d: %s"), Hour, Min, Sec, nCamIdx, strDetail);
+			// [수정] 서버 판정 결과는 로그에서 더 잘 보이도록 특수문자 추가
+			if (strStatus == _T("판정결과")) {
+				strListLine.Format(_T("[%02d:%02d:%02d] ★ %s"), Hour, Min, Sec, strDetail);
+			}
+			else {
+				strListLine.Format(_T("[%02d:%02d:%02d] CAM%d: %s"), Hour, Min, Sec, nCamIdx, strDetail);
+			}
 
-			// 스레드 안전을 위해SendMessage 사용
+			// 스레드 안전을 위해 SendMessage 사용
 			::SendMessage(hWndList, LB_ADDSTRING, 0, (LPARAM)(LPCTSTR)strListLine);
 
 			// 자동 스크롤
@@ -955,6 +960,74 @@ void CCameraManager::OnImagesSkipped( CInstantCamera& camera, size_t countOfSkip
 	 }
 }
 
+UINT CCameraManager::ThreadReceiveFromServer(LPVOID pParam)
+{
+	CCameraManager* pMgr = static_cast<CCameraManager*>(pParam);
+	if (!pMgr) return 0;
+
+	while (pMgr->m_bIsServerConnected)
+	{
+		PacketHeader header;
+		// 1. 헤더 수신 (8바이트가 다 올 때까지 대기)
+		int nRet = recv(pMgr->m_hSocket, (char*)&header, sizeof(header), MSG_WAITALL);
+		if (nRet <= 0) break;
+
+		// 시그니처 확인 (0x4D47)
+		if (ntohs(header.signature) != 0x4D47) continue;
+
+		uint16_t cmdId = ntohs(header.cmdId);
+		uint32_t bodySize = ntohl(header.bodySize);
+
+		// 2. 바디(JSON) 수신
+		if (bodySize > 0 && bodySize < 1024 * 10)
+		{
+			std::vector<char> buffer(bodySize + 1, 0); // 문자열 끝 NULL 처리를 위해 +1
+			int nBodyRet = recv(pMgr->m_hSocket, buffer.data(), bodySize, MSG_WAITALL);
+
+			if (nBodyRet > 0)
+			{
+				std::string jsonStr(buffer.data());
+
+				// 판정 결과 패킷(301) 처리
+				if (cmdId == 301)
+				{
+					try {
+						// JSON 파싱 시도
+						auto j = nlohmann::json::parse(jsonStr);
+
+						// 서버 제공 데이터 구조(RESULT_SEND.txt)에 맞춤 
+						// "verdict": "PASS" | "FAIL" | "UNCERTAIN"
+						// "defect_class": "normal" | "crack" | "hole" | "rust" | "scratch" | "unknown"
+
+						std::string verdict = j.value("verdict", "UNKNOWN");
+						std::string defect = j.value("defect_class", "none");
+
+						CString strDisplay;
+						//  서버 데이터 기반으로 포맷팅
+						strDisplay.Format(_T("판정: %S / 유형: %S"),
+							verdict.c_str(), defect.c_str());
+
+						pMgr->WriteLog(0, _T("판정결과"), strDisplay);
+					}
+					catch (nlohmann::json::parse_error& e) {
+						// 파싱 실패 시 구체적인 이유 확인용 로그
+						CString strErr;
+						strErr.Format(_T("JSON 파싱 에러: %S"), e.what());
+						pMgr->WriteLog(0, _T("에러"), strErr);
+					}
+					catch (...) {
+						pMgr->WriteLog(0, _T("에러"), _T("서버 판정 데이터 처리 중 알 수 없는 오류"));
+					}
+				}
+			}
+		}
+	}
+
+	pMgr->m_bIsServerConnected = false;
+	return 0;
+}
+
+// 3. 서버 연결 함수 (수신 스레드 시작 추가)
 bool CCameraManager::ConnectToServer(std::string ip, int port)
 {
 	WSADATA wsaData;
@@ -963,7 +1036,6 @@ bool CCameraManager::ConnectToServer(std::string ip, int port)
 	m_hSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (m_hSocket == INVALID_SOCKET) return false;
 
-	// TCP_NODELAY 설정 (Nagle 알고리즘 비활성화 - 150ms 목표 달성에 필수)
 	BOOL bOptVal = TRUE;
 	setsockopt(m_hSocket, IPPROTO_TCP, TCP_NODELAY, (char*)&bOptVal, sizeof(BOOL));
 
@@ -971,7 +1043,6 @@ bool CCameraManager::ConnectToServer(std::string ip, int port)
 	serverAddr.sin_family = AF_INET;
 	serverAddr.sin_port = htons(port);
 
-	// inet_ptr 대신 inet_pton 사용 (VS2022 표준)
 	if (inet_pton(AF_INET, ip.c_str(), &serverAddr.sin_addr) <= 0) {
 		closesocket(m_hSocket);
 		return false;
@@ -984,53 +1055,53 @@ bool CCameraManager::ConnectToServer(std::string ip, int port)
 	}
 
 	m_bIsServerConnected = true;
+
+	// [추가] 서버에서 오는 판정 결과를 실시간으로 받기 위해 수신 스레드 시작
+	AfxBeginThread(ThreadReceiveFromServer, this);
+
 	return true;
 }
 
-void CCameraManager::DisconnectFromServer()
+// 4. 이미지 전송 함수 (기존 로직 유지)
+void CCameraManager::SendImageToAI(int nCameraIndex, cv::Mat& matImage, int nPlateId, int nShotIdx, CmdID cmd)
 {
-	if (m_hSocket != INVALID_SOCKET) {
-		closesocket(m_hSocket);
-		WSACleanup();
-	}
-	m_bIsServerConnected = false;
-}
-
-bool CCameraManager::SendImageToServer(int nCamIndex, const cv::Mat& matEntry)
-{
-	// 멤버 변수 사용 시 클래스 내부 함수임을 명시
-	if (!m_bIsServerConnected || matEntry.empty()) return false;
+	if (!m_bIsServerConnected || m_hSocket == INVALID_SOCKET) return;
 
 	try {
-		// 1. 이미지 JPG 인코딩
-		std::vector<uchar> buf;
+		std::vector<uchar> imgBuf;
 		std::vector<int> params = { cv::IMWRITE_JPEG_QUALITY, 90 };
-		cv::imencode(".jpg", matEntry, buf, params);
+		cv::imencode(".jpg", matImage, imgBuf, params);
 
-		// 2. JSON 바디 생성
-		std::string jsonBody = "{ \"cam_id\": " + std::to_string(nCamIndex) + " }";
+		nlohmann::json j;
+		j["client_id"] = "cam_01";
+		j["plate_id"] = nPlateId;
+		j["shot_index"] = nShotIdx;
+		j["total_shots"] = 8; // 서버 요청에 따라 8장으로 수정됨
+		std::string jsonPayload = j.dump();
 
-		// 3. 헤더 구성 (Big-endian)
 		PacketHeader header;
 		header.signature = htons(0x4D47);
-		header.cmdId = htons(static_cast<uint16_t>(CmdID::IMG_SEND));
-		header.bodySize = htonl((uint32_t)jsonBody.size());
+		header.cmdId = htons((uint16_t)cmd);
+		header.bodySize = htonl((uint32_t)jsonPayload.length());
 
-		uint32_t imageSize = htonl((uint32_t)buf.size());
+		if (send(m_hSocket, (char*)&header, sizeof(header), 0) == SOCKET_ERROR) throw std::runtime_error("Header 전송 실패");
+		if (send(m_hSocket, jsonPayload.c_str(), (int)jsonPayload.length(), 0) == SOCKET_ERROR) throw std::runtime_error("JSON 전송 실패");
 
-		// 4. 전송
-		send(m_hSocket, (char*)&header, sizeof(header), 0);
-		send(m_hSocket, jsonBody.c_str(), (int)jsonBody.size(), 0);
-		send(m_hSocket, (char*)&imageSize, sizeof(imageSize), 0);
-		send(m_hSocket, (char*)buf.data(), (int)buf.size(), 0);
+		uint32_t netImageLen = htonl((uint32_t)imgBuf.size());
+		send(m_hSocket, (char*)&netImageLen, sizeof(netImageLen), 0);
+		if (send(m_hSocket, (char*)imgBuf.data(), (int)imgBuf.size(), 0) == SOCKET_ERROR) throw std::runtime_error("이미지 전송 실패");
 
-		return true;
+		// 전송 로그는 간소화 (UI 복잡도 방지)
+		if (nShotIdx == 8) {
+			WriteLog(nCameraIndex, _T("정상"), _T("물체 전송 완료 (AI 판정 대기 중...)"));
+		}
 	}
-	catch (...) {
-		return false;
+	catch (const std::exception& e) {
+		WriteLog(nCameraIndex, _T("에러"), (CString)e.what());
 	}
 }
 
+// 5. 서버 연결 체크 및 나머지 유틸리티 함수 (기존 유지)
 bool CCameraManager::CheckServerConnection()
 {
 	if (m_hSocket == INVALID_SOCKET) {
@@ -1042,75 +1113,28 @@ bool CCameraManager::CheckServerConnection()
 	FD_ZERO(&readfds);
 	FD_SET(m_hSocket, &readfds);
 
-	timeval timeout;
-	timeout.tv_sec = 0;
-	timeout.tv_usec = 0;
-
+	timeval timeout = { 0, 0 };
 	int result = select(0, &readfds, NULL, NULL, &timeout);
 
 	if (result > 0) {
 		char buf[1];
-		int recvRet = recv(m_hSocket, buf, 1, MSG_PEEK);
-
-		// recvRet == 0 인 경우(서버가 명시적으로 닫음)에만 연결 종료 처리
-		if (recvRet == 0) {
-			closesocket(m_hSocket);
-			m_hSocket = INVALID_SOCKET;
-			m_bIsServerConnected = false;
-			return false;
-		}
-		// recvRet > 0 이면 서버가 보낸 응답 데이터가 있는 것이므로 연결 유지!
-	}
-	else if (result < 0) {
-		// 소켓 자체 에러 시에만 연결 종료
-		int err = WSAGetLastError();
-		if (err != WSAEWOULDBLOCK) {
+		if (recv(m_hSocket, buf, 1, MSG_PEEK) == 0) {
 			closesocket(m_hSocket);
 			m_hSocket = INVALID_SOCKET;
 			m_bIsServerConnected = false;
 			return false;
 		}
 	}
-
 	return m_bIsServerConnected;
 }
 
-void CCameraManager::SendImageToAI(int nCameraIndex, cv::Mat& matImage, int nPlateId, int nShotIdx, CmdID cmd)
+void CCameraManager::DisconnectFromServer()
 {
-	// 1. 기본 체크 (이미 연결이 끊긴 상태면 시도 안 함)
-	if (!m_bIsServerConnected || m_hSocket == INVALID_SOCKET) return;
-
-	try {
-		std::vector<uchar> imgBuf;
-		cv::imencode(".jpg", matImage, imgBuf);
-
-		nlohmann::json j;
-		j["client_id"] = "cam_01";
-		j["plate_id"] = nPlateId;
-		j["shot_index"] = nShotIdx;
-		j["total_shots"] = 4;
-		std::string jsonPayload = j.dump();
-
-		PacketHeader header;
-		header.signature = htons(0x4D47);
-		header.cmdId = htons((uint16_t)cmd);
-		header.bodySize = htonl((uint32_t)jsonPayload.length());
-
-		// 전송 시도
-		if (send(m_hSocket, (char*)&header, sizeof(header), 0) == SOCKET_ERROR) throw std::runtime_error("Header 전송 실패");
-		if (send(m_hSocket, jsonPayload.c_str(), (int)jsonPayload.length(), 0) == SOCKET_ERROR) throw std::runtime_error("JSON 전송 실패");
-
-		uint32_t netImageLen = htonl((uint32_t)imgBuf.size());
-		send(m_hSocket, (char*)&netImageLen, sizeof(netImageLen), 0);
-		if (send(m_hSocket, (char*)imgBuf.data(), (int)imgBuf.size(), 0) == SOCKET_ERROR) throw std::runtime_error("이미지 전송 실패");
-
-		CString strLog;
-		strLog.Format(_T("전송 성공 (CMD:%d, Shot:%d)"), (int)cmd, nShotIdx);
-		WriteLog(nCameraIndex, _T("정상"), strLog);
-	}
-	catch (const std::exception& e) {
-		// 에러 로그는 찍되, 연결 상태를 false로 바꾸지 않음
-		WriteLog(nCameraIndex, _T("에러"), (CString)e.what());
+	m_bIsServerConnected = false; // 수신 스레드 종료 유도
+	if (m_hSocket != INVALID_SOCKET) {
+		closesocket(m_hSocket);
+		m_hSocket = INVALID_SOCKET;
+		WSACleanup();
 	}
 }
 
