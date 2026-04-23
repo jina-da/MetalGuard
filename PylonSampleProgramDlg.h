@@ -6,6 +6,8 @@
 #include "afxcmn.h"
 #include "afxwin.h"
 
+#define WM_UPDATE_LOG (WM_USER + 100)
+
 class CPylonSampleProgramDlg;
 
 struct ReclassifyParam {
@@ -108,5 +110,9 @@ public:
 	afx_msg void OnBnClickedCam3Live();
 	afx_msg void OnStnClickedCam0Info();
 	afx_msg void OnBnClickedReclassifyBtn(); // 버튼 이벤트
+
+	afx_msg LRESULT OnUpdateLog(WPARAM wParam, LPARAM lParam);
+
 	static UINT ThreadReclassify(LPVOID pParam); // 전송용 백그라운드 스레드
+	CListBox m_listLog;
 };

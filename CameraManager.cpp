@@ -1,5 +1,6 @@
 ﻿#include "stdafx.h"
 #include "CameraManager.h"
+#include "resource.h"
 #include <time.h>
 #include <opencv2/opencv.hpp>
 #include <json.hpp>
@@ -15,6 +16,8 @@
 using namespace cv;
 using namespace Pylon;
 using namespace GenICam;
+
+extern HWND g_hMainWnd;
 
 CCameraManager::CCameraManager(void)
 {
@@ -436,36 +439,45 @@ int CCameraManager::LiveStop(int nCamIndex, int nMode)
 
 void CCameraManager::WriteLog(int nCamIdx, CString strStatus, CString strDetail)
 {
-	// 1. 시간 계산
+	// 1. 시간 계산 및 포맷팅
 	CTime t = CTime::GetCurrentTime();
 	int Hour = t.GetHour();
 	int Min = t.GetMinute();
 	int Sec = t.GetSecond();
 
-	// 2. 출력창(Visual Studio Output)에 즉시 표시 (거슬리는 Lambda 메시지 사이에서 찾기 쉬움)
+	// 2. Visual Studio 출력창(Output) 표시
 	CString strConsole;
 	strConsole.Format(_T("%s: [%04d-%02d-%02d %02d:%02d:%02d] CAM%d: %s\n"),
 		strStatus, t.GetYear(), t.GetMonth(), t.GetDay(), Hour, Min, Sec, nCamIdx, strDetail);
 	OutputDebugString(strConsole);
 
-	// 3. 파일 기록 (파일 포인터 'log'가 유효한지 체크)
-	// 만약 log가 전역변수나 멤버변수로 선언되어 있고, fopen이 되어 있어야 합니다.
+	// 3. 파일 기록 (유지)
 	if (log != NULL)
 	{
-		fprintf(log, "---------------------------------------------------------------------------\n");
-		// [수정 전] fprintf(log, "[%02d:%02d:%02d] [ CAM : %d ] [%s] \n", Hour, Min, Sec, nCamIdx, CT2A(strStatus));
-		// [수정 후] (LPCSTR)를 명시적으로 붙여줍니다.
-		fprintf(log, "[%02d:%02d:%02d] [ CAM : %d ] [%s] \n", Hour, Min, Sec, nCamIdx, (LPCSTR)CT2A(strStatus));
-
-		fprintf(log, "---------------------------------------------------------------------------\n");
-		fprintf(log, "[Detail]\n");
-
-		// [수정 후] 여기도 마찬가지로 (LPCSTR) 추가
-		fprintf(log, "%s\n", (LPCSTR)CT2A(strDetail));
-
-		fprintf(log, "---------------------------------------------------------------------------\n\n");
-
+		fprintf(log, "[%02d:%02d:%02d] [ CAM : %d ] [%s] %s\n", Hour, Min, Sec, nCamIdx, (LPCSTR)CT2A(strStatus), (LPCSTR)CT2A(strDetail));
 		fflush(log);
+	}
+
+	// 4. UI 리스트박스 출력 (전역 핸들 사용)
+	if (g_hMainWnd != NULL && ::IsWindow(g_hMainWnd))
+	{
+		// 수정한 ID인 IDC_LOG_LIST를 사용합니다.
+		HWND hWndList = ::GetDlgItem(g_hMainWnd, IDC_LIST_LOG);
+
+		if (hWndList != NULL && ::IsWindow(hWndList))
+		{
+			CString strListLine;
+			strListLine.Format(_T("[%02d:%02d:%02d] CAM%d: %s"), Hour, Min, Sec, nCamIdx, strDetail);
+
+			// 스레드 안전을 위해SendMessage 사용
+			::SendMessage(hWndList, LB_ADDSTRING, 0, (LPARAM)(LPCTSTR)strListLine);
+
+			// 자동 스크롤
+			int nCount = (int)::SendMessage(hWndList, LB_GETCOUNT, 0, 0);
+			::SendMessage(hWndList, LB_SETCURSEL, nCount - 1, 0);
+
+			if (nCount > 500) ::SendMessage(hWndList, LB_DELETESTRING, 0, 0);
+		}
 	}
 }
 
@@ -1026,7 +1038,6 @@ bool CCameraManager::CheckServerConnection()
 		return false;
 	}
 
-	// 소켓 상태를 비동기적으로 체크 (서버가 강제로 끊었는지 확인)
 	fd_set readfds;
 	FD_ZERO(&readfds);
 	FD_SET(m_hSocket, &readfds);
@@ -1035,34 +1046,38 @@ bool CCameraManager::CheckServerConnection()
 	timeout.tv_sec = 0;
 	timeout.tv_usec = 0;
 
-	// 읽기 준비 상태를 체크함과 동시에 연결 끊김 확인
 	int result = select(0, &readfds, NULL, NULL, &timeout);
 
 	if (result > 0) {
 		char buf[1];
-		// 실제로 데이터를 1바이트 읽어보려 시도 (MSG_PEEK로 데이터는 유지)
 		int recvRet = recv(m_hSocket, buf, 1, MSG_PEEK);
-		if (recvRet <= 0) { // 서버가 닫았거나 에러 발생
+
+		// [수정] recvRet == 0 인 경우(서버가 명시적으로 닫음)에만 연결 종료 처리
+		if (recvRet == 0) {
 			closesocket(m_hSocket);
 			m_hSocket = INVALID_SOCKET;
 			m_bIsServerConnected = false;
-			TRACE(_T("Server connection lost (Closed by server).\n"));
+			return false;
+		}
+		// recvRet > 0 이면 서버가 보낸 응답 데이터가 있는 것이므로 연결 유지!
+	}
+	else if (result < 0) {
+		// 소켓 자체 에러 시에만 연결 종료
+		int err = WSAGetLastError();
+		if (err != WSAEWOULDBLOCK) {
+			closesocket(m_hSocket);
+			m_hSocket = INVALID_SOCKET;
+			m_bIsServerConnected = false;
 			return false;
 		}
 	}
-	else if (result < 0) { // 소켓 에러
-		closesocket(m_hSocket);
-		m_hSocket = INVALID_SOCKET;
-		m_bIsServerConnected = false;
-		return false;
-	}
 
-	m_bIsServerConnected = true;
-	return true;
+	return m_bIsServerConnected;
 }
 
 void CCameraManager::SendImageToAI(int nCameraIndex, cv::Mat& matImage, int nPlateId, int nShotIdx, CmdID cmd)
 {
+	// 1. 기본 체크 (이미 연결이 끊긴 상태면 시도 안 함)
 	if (!m_bIsServerConnected || m_hSocket == INVALID_SOCKET) return;
 
 	try {
@@ -1071,32 +1086,33 @@ void CCameraManager::SendImageToAI(int nCameraIndex, cv::Mat& matImage, int nPla
 
 		nlohmann::json j;
 		j["client_id"] = "cam_01";
-		j["timestamp"] = "2026-04-22 17:00:00"; // 실제 시간 라이브러리 사용 권장
 		j["plate_id"] = nPlateId;
 		j["shot_index"] = nShotIdx;
 		j["total_shots"] = 4;
 		std::string jsonPayload = j.dump();
 
 		PacketHeader header;
-		header.signature = 0x4D47;
+		header.signature = htons(0x4D47);
 		header.cmdId = htons((uint16_t)cmd);
 		header.bodySize = htonl((uint32_t)jsonPayload.length());
 
-		// 각 단계별 전송 성공 여부 체크 (이지나님 요청사항)
-		if (send(m_hSocket, (char*)&header, sizeof(header), 0) == SOCKET_ERROR) throw std::runtime_error("H_Err");
-		if (send(m_hSocket, jsonPayload.c_str(), (int)jsonPayload.length(), 0) == SOCKET_ERROR) throw std::runtime_error("J_Err");
+		// 전송 시도
+		if (send(m_hSocket, (char*)&header, sizeof(header), 0) == SOCKET_ERROR) throw std::runtime_error("Header 전송 실패");
+		if (send(m_hSocket, jsonPayload.c_str(), (int)jsonPayload.length(), 0) == SOCKET_ERROR) throw std::runtime_error("JSON 전송 실패");
 
 		uint32_t netImageLen = htonl((uint32_t)imgBuf.size());
-		if (send(m_hSocket, (char*)&netImageLen, sizeof(netImageLen), 0) == SOCKET_ERROR) throw std::runtime_error("S_Err");
-		if (send(m_hSocket, (char*)imgBuf.data(), (int)imgBuf.size(), 0) == SOCKET_ERROR) throw std::runtime_error("I_Err");
+		send(m_hSocket, (char*)&netImageLen, sizeof(netImageLen), 0);
+		if (send(m_hSocket, (char*)imgBuf.data(), (int)imgBuf.size(), 0) == SOCKET_ERROR) throw std::runtime_error("이미지 전송 실패");
 
-		CString strType = (cmd == CmdID::IMG_RECLASSIFY) ? _T("재분류") : _T("일반");
-		WriteLog(nCameraIndex, _T("정상"), strType + _T(" 전송 완료"));
+		CString strLog;
+		strLog.Format(_T("전송 성공 (CMD:%d, Shot:%d)"), (int)cmd, nShotIdx);
+		WriteLog(nCameraIndex, _T("정상"), strLog);
 	}
-	catch (...) {
-		// 전송 실패 시 통신 플래그만 해제 (카메라 LiveStop은 호출하지 않음)
-		m_bIsServerConnected = false;
-		WriteLog(nCameraIndex, _T("에러"), _T("서버 전송 중단 - 재연결 필요"));
+	catch (const std::exception& e) {
+		// [수정 포인트] 에러 로그는 찍되, 연결 상태를 false로 바꾸지 않습니다.
+		WriteLog(nCameraIndex, _T("에러"), (CString)e.what());
+
+		// m_bIsServerConnected = false; <-- 이 부분을 반드시 주석 처리하세요.
 	}
 }
 
@@ -1117,26 +1133,33 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 
 	cv::Mat gray, diff;
 	cv::cvtColor(currentFrame, gray, cv::COLOR_BGR2GRAY);
-	cv::GaussianBlur(gray, gray, cv::Size(3, 3), 0);
+	cv::GaussianBlur(gray, gray, cv::Size(5, 5), 0); // 가우시안 블러 크기를 키워 노이즈 억제
 
-	// 첫 실행 시 이전 프레임이 없으면 배경만 저장하고 즉시 리턴
+	// [수정] 첫 실행 시 이전 프레임이 없으면 배경만 저장하고 10프레임 정도는 무시해야 함
 	if (m_matPrevFrame[nCamIndex].empty()) {
 		gray.copyTo(m_matPrevFrame[nCamIndex]);
-		return false; // 처음엔 무조건 false를 반환하여 초록색으로 시작하게 함
+		m_nWaitFrameCount[nCamIndex] = 0; // 대기 카운트 초기화 (헤더에 변수 추가 필요)
+		return false;
+	}
+
+	// [추가] 초기 안정화 시간 (약 10프레임 동안은 움직임 감지 안 함)
+	if (m_nWaitFrameCount[nCamIndex] < 10) {
+		gray.copyTo(m_matPrevFrame[nCamIndex]);
+		m_nWaitFrameCount[nCamIndex]++;
+		return false;
 	}
 
 	// 차이 계산
 	cv::absdiff(m_matPrevFrame[nCamIndex], gray, diff);
-	cv::threshold(diff, diff, 45, 255, cv::THRESH_BINARY); // 임계값 살짝 상향 (노이즈 방지)
+	cv::threshold(diff, diff, 60, 255, cv::THRESH_BINARY); // 임계값을 45 -> 60으로 상향
 
 	int nChangedPixels = cv::countNonZero(diff);
-
-	// 다음 비교를 위해 현재 프레임을 저장
 	gray.copyTo(m_matPrevFrame[nCamIndex]);
 
-	// 픽셀 변화량이 너무 작으면 인식하지 않음
-	// 처음 시작 시 카메라 노이즈가 보통 500~1000픽셀 정도 발생하므로 기준을 확실히 둠
-	return (nChangedPixels > 500);
+	// [디버깅] 실제 픽셀 변화량을 출력창에 찍어보세요. 너무 낮으면 기준을 높여야 함.
+	// TRACE(_T("Changed Pixels: %d\n"), nChangedPixels);
+
+	return (nChangedPixels > 1500); // 기준치를 500 -> 1500으로 상향 (환경에 맞게 조절)
 }
 
 void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr& ptrGrabResult)
@@ -1174,43 +1197,46 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 			CString strStatusText = _T("");
 
 			if (!bIsConnected) {
-				rectColor = cv::Scalar(128, 128, 128); // 회색
+				rectColor = cv::Scalar(128, 128, 128);
 				strStatusText = _T("SERVER DISCONNECTED");
 				thickness = 1;
 				m_bObjectDetected[nCameraIndex] = false;
 			}
 			else {
-				// 감지 로직
+				// [핵심 수정] 촬영 중이 아닐 때 + 마지막 촬영 후 2초가 지났을 때만 감지 허용
 				if (!m_bObjectDetected[nCameraIndex]) {
-					cv::Mat matForDetect = matOriginal(roiSend).clone();
-					if (DetectObject(nCameraIndex, matForDetect)) {
-						m_bObjectDetected[nCameraIndex] = true;
-						m_nTriggeredShotCount[nCameraIndex] = 0;
-						nShotIndex[nCameraIndex] = 1;
-						WriteLog(nCameraIndex, _T("정상"), _T("물체 감지 - 촬영 시작"));
+					// --- 추가된 조건: 촬영 종료 후 2초간은 재감지 금지 ---
+					if (GetTickCount() - m_dwLastSendTime[nCameraIndex] > 2000)
+					{
+						cv::Mat matForDetect = matOriginal(roiSend).clone();
+						if (DetectObject(nCameraIndex, matForDetect)) {
+							m_bObjectDetected[nCameraIndex] = true;
+							m_nTriggeredShotCount[nCameraIndex] = 0;
+							nShotIndex[nCameraIndex] = 1;
+							m_dwLastSendTime[nCameraIndex] = 0; // 첫 장 즉시 전송용
+							WriteLog(nCameraIndex, _T("정상"), _T("물체 감지! 4장 촬영 시작"));
+						}
 					}
 				}
 
 				if (m_bObjectDetected[nCameraIndex]) {
-					rectColor = cv::Scalar(0, 0, 255); // 빨간색
+					rectColor = cv::Scalar(0, 0, 255);
 					strStatusText = _T("CAPTURING...");
 					thickness = 5;
 				}
 				else {
-					rectColor = cv::Scalar(0, 255, 0); // 초록색
+					rectColor = cv::Scalar(0, 255, 0);
 					thickness = 2;
 				}
 			}
 
-			// 5. 화면 출력 (캐스팅 수정 부분)
+			// 5. 화면 출력
 			cv::rectangle(matOriginal, roiDisplay, rectColor, thickness);
 			if (!strStatusText.IsEmpty()) {
-				// (LPCSTR) 캐스팅을 추가하여 cv::String 변환 에러 해결
 				cv::putText(matOriginal, (LPCSTR)CT2A(strStatusText), cv::Point(roiDisplay.x, roiDisplay.y - 15),
 					cv::FONT_HERSHEY_SIMPLEX, 1.0, rectColor, 2);
 			}
 
-			// 라이브 뷰 업데이트
 			matOriginal.copyTo(m_matLiveImage[nCameraIndex]);
 
 			// 6. 서버 전송
@@ -1224,46 +1250,27 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 					std::vector<int> params = { cv::IMWRITE_JPEG_QUALITY, 90 };
 					cv::imencode(".jpg", matCropped, imgBuf, params);
 
+					uint16_t currentCmd = static_cast<uint16_t>(m_nCurrentMode);
+
 					nlohmann::json j;
-					j["mode"] = "inspect";
+					j["mode"] = (m_nCurrentMode == SystemMode::RECLASSIFY) ? "reclassify" : "inspect";
 					j["client_id"] = "cam_0" + std::to_string(nCameraIndex + 1);
 					j["timestamp"] = (LPCSTR)CT2A(CTime::GetCurrentTime().Format(_T("%Y-%m-%d %H:%M:%S")));
-					j["plate_id"] = 1;
+					j["plate_id"] = m_nNextPlateId;
 					j["shot_index"] = nShotIndex[nCameraIndex];
 					j["total_shots"] = nTotalShots;
 
 					std::string jsonPayload = j.dump();
 					PacketHeader header;
 					header.signature = htons(0x4D47);
-					header.cmdId = htons(1);
+					header.cmdId = htons(currentCmd);
 					header.bodySize = htonl((uint32_t)jsonPayload.length());
 
-					if (send(m_hSocket, (char*)&header, sizeof(header), 0) == SOCKET_ERROR) {
-						WriteLog(nCameraIndex, _T("에러"), _T("전송 중 소켓 에러 발생"));
-						m_bIsServerConnected = false;
-						return;
-					}
-					if (send(m_hSocket, jsonPayload.c_str(), (int)jsonPayload.length(), 0) == SOCKET_ERROR) {
-						WriteLog(nCameraIndex, _T("에러"), _T("JSON 전송 실패"));
-						m_bIsServerConnected = false;
-						return;
-					}
-
+					send(m_hSocket, (char*)&header, sizeof(header), 0);
+					send(m_hSocket, jsonPayload.c_str(), (int)jsonPayload.length(), 0);
 					uint32_t netImageLen = htonl((uint32_t)imgBuf.size());
-					if (send(m_hSocket, (char*)&netImageLen, sizeof(netImageLen), 0) == SOCKET_ERROR) {
-						WriteLog(nCameraIndex, _T("에러"), _T("이미지 크기 전송 실패"));
-						m_bIsServerConnected = false;
-						return;
-					}
-					if (send(m_hSocket, (char*)imgBuf.data(), (int)imgBuf.size(), 0) == SOCKET_ERROR) {
-						WriteLog(nCameraIndex, _T("에러"), _T("이미지 데이터 전송 실패"));
-						m_bIsServerConnected = false;
-						return;
-					}
-
-					CString strLog;
-					strLog.Format(_T("%d번 이미지 전송 완료"), nShotIndex[nCameraIndex]);
-					WriteLog(nCameraIndex, _T("정상"), strLog);
+					send(m_hSocket, (char*)&netImageLen, sizeof(netImageLen), 0);
+					send(m_hSocket, (const char*)imgBuf.data(), (int)imgBuf.size(), 0);
 
 					m_dwLastSendTime[nCameraIndex] = dwCurrentTime;
 					m_nTriggeredShotCount[nCameraIndex]++;
@@ -1271,7 +1278,12 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 
 					if (m_nTriggeredShotCount[nCameraIndex] >= nTotalShots) {
 						m_bObjectDetected[nCameraIndex] = false;
-						WriteLog(nCameraIndex, _T("정상"), _T("촬영 시퀀스 완료"));
+						m_nNextPlateId++;
+
+						// [매우 중요] 완료 시점의 시간을 기록하여 '2초 대기'의 기준점으로 삼음
+						m_dwLastSendTime[nCameraIndex] = GetTickCount();
+
+						WriteLog(nCameraIndex, _T("정상"), _T("4장 전송 완료. (중복 방지 대기 중)"));
 					}
 				}
 			}

@@ -39,6 +39,11 @@ enum class CmdID : uint16_t {
     RECLASSIFY_CONFIRM = 401   // 재분류 확정
 };
 
+enum class SystemMode {
+    NORMAL = 1,      // 일반 분류 모드 (CMD: 1)
+    RECLASSIFY = 2   // 재분류 모드 (CMD: 2)
+};
+
 // 스레드 전송용 파라미터 구조체
 struct AsyncSendParam {
     class CCameraManager* pMgr;
@@ -53,6 +58,8 @@ class CCameraManager : public CImageEventHandler, public CConfigurationEventHand
 public:
     CCameraManager(void);
     ~CCameraManager(void);
+
+    SystemMode m_nCurrentMode = SystemMode::NORMAL; // 기본값은 일반 모드
 
     // --- 통신 관련 멤버 변수 ---
     SOCKET m_hSocket;
@@ -124,6 +131,8 @@ public:
     int m_iCM_Height[CAM_NUM];
     int m_iCM_reSizeWidth[CAM_NUM];
 
+    int m_nWaitFrameCount[2] = { 0, 0 }; // 카메라별 초기 대기 프레임 카운트
+
     bool m_bCaptureEnd[CAM_NUM];
     bool m_bRemoveCamera[CAM_NUM];
 
@@ -133,6 +142,7 @@ public:
     long m_iSkippiedFrame[CAM_NUM];
     long m_iGrabbedFrame[CAM_NUM];
     int m_imgNjm;
+    int m_nNextPlateId = 1;
 
     // --- 멤버 함수 선언 ---
     int FindCamera(char szCamName[CAM_NUM][100], char szCamSerialNumber[CAM_NUM][100], char szInterfacName[CAM_NUM][100], int* nCamNumber);

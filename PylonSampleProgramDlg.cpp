@@ -6,6 +6,7 @@
 #define new DEBUG_NEW
 #endif
 
+HWND g_hMainWnd = NULL;
 
 CPylonSampleProgramDlg *pMainDlg;
 UINT LiveGrabThreadCam0(LPVOID pParam)
@@ -163,7 +164,7 @@ void CPylonSampleProgramDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialog::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_CAMERA_LIST, m_ctrlCamList);
-
+	DDX_Control(pDX, IDC_LIST_LOG, m_listLog);
 }
 
 BEGIN_MESSAGE_MAP(CPylonSampleProgramDlg, CDialog)
@@ -178,19 +179,21 @@ BEGIN_MESSAGE_MAP(CPylonSampleProgramDlg, CDialog)
 	ON_BN_CLICKED(IDC_GRAB_SINGLE_BTN, &CPylonSampleProgramDlg::OnBnClickedGrabSingleBtn)
 	ON_BN_CLICKED(IDC_CAM0_LIVE, &CPylonSampleProgramDlg::OnBnClickedCam0Live)
 	ON_BN_CLICKED(IDC_CLOSE_CAM_BTN, &CPylonSampleProgramDlg::OnBnClickedCloseCamBtn)
+	ON_BN_CLICKED(IDC_RECLASSIFY_BTN, &CPylonSampleProgramDlg::OnBnClickedReclassifyBtn)
 
 //	ON_WM_RBUTTONDBLCLK()
 //	ON_WM_MOUSEMOVE()
 	ON_BN_CLICKED(IDC_SOFT_TRIG_BTN, &CPylonSampleProgramDlg::OnBnClickedSoftTrigBtn)
 	ON_BN_CLICKED(IDC_EXIT_BTN, &CPylonSampleProgramDlg::OnBnClickedExitBtn)
 //	ON_STN_CLICKED(IDC_CAMERA1_STATS, &CPylonSampleProgramDlg::OnStnClickedCamera1Stats)
-ON_BN_CLICKED(IDC_CAM1_LIVE, &CPylonSampleProgramDlg::OnBnClickedCam1Live)
-ON_BN_CLICKED(IDC_SAVE_IMG_BTN, &CPylonSampleProgramDlg::OnBnClickedSaveImgBtn)
-ON_BN_CLICKED(IDC_BUTTON5, &CPylonSampleProgramDlg::OnBnClickedButton5)
-//ON_BN_CLICKED(IDC_LINEAVGCAL_BTN, &CPylonSampleProgramDlg::OnBnClickedLineavgcalBtn)
-ON_BN_CLICKED(IDC_TWO_CAMERA_LIVE_BTN, &CPylonSampleProgramDlg::OnBnClickedTwoCameraLiveBtn)
-ON_BN_CLICKED(IDC_CAM2_LIVE, &CPylonSampleProgramDlg::OnBnClickedCam2Live)
-ON_BN_CLICKED(IDC_CAM3_LIVE, &CPylonSampleProgramDlg::OnBnClickedCam3Live)
+	ON_BN_CLICKED(IDC_CAM1_LIVE, &CPylonSampleProgramDlg::OnBnClickedCam1Live)
+	ON_BN_CLICKED(IDC_SAVE_IMG_BTN, &CPylonSampleProgramDlg::OnBnClickedSaveImgBtn)
+	ON_BN_CLICKED(IDC_BUTTON5, &CPylonSampleProgramDlg::OnBnClickedButton5)
+	//ON_BN_CLICKED(IDC_LINEAVGCAL_BTN, &CPylonSampleProgramDlg::OnBnClickedLineavgcalBtn)
+	ON_BN_CLICKED(IDC_TWO_CAMERA_LIVE_BTN, &CPylonSampleProgramDlg::OnBnClickedTwoCameraLiveBtn)
+	ON_BN_CLICKED(IDC_CAM2_LIVE, &CPylonSampleProgramDlg::OnBnClickedCam2Live)
+	ON_BN_CLICKED(IDC_CAM3_LIVE, &CPylonSampleProgramDlg::OnBnClickedCam3Live)
+	ON_MESSAGE(WM_UPDATE_LOG, &CPylonSampleProgramDlg::OnUpdateLog)
 END_MESSAGE_MAP()
 
 
@@ -199,6 +202,8 @@ END_MESSAGE_MAP()
 BOOL CPylonSampleProgramDlg::OnInitDialog()
 {
 	CDialog::OnInitDialog();
+
+	g_hMainWnd = m_hWnd;
 
 	// 시스템 메뉴 및 아이콘 설정
 	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
@@ -1223,23 +1228,18 @@ void CPylonSampleProgramDlg::OnNMClickListCam(NMHDR* pNMHDR, LRESULT* pResult)
 
 void CPylonSampleProgramDlg::OnBnClickedReclassifyBtn()
 {
-	// [중요] 카메라가 라이브 상태(bStopThread[0] == true)일 때만 동작
-	// 촬영을 멈추는 것이 아니라, 현재 찍히고 있는 메모리만 복사합니다.
-	if (bStopThread[0] && !m_CameraManager.m_matLiveImage[0].empty())
-	{
-		// 1. 전송 파라미터 생성
-		ReclassifyParam* pParam = new ReclassifyParam;
-		pParam->pDlg = this;
+	// 버튼을 누를 때마다 모드를 토글(Toggle) 하거나 재분류 모드로 고정합니다.
+	if (m_CameraManager.m_nCurrentMode == SystemMode::NORMAL) {
+		m_CameraManager.m_nCurrentMode = SystemMode::RECLASSIFY;
+		m_CameraManager.WriteLog(0, _T("알림"), _T("시스템 모드 변경: [재분류 모드]"));
 
-		// 2. 현재 라이브 이미지 복사 (clone을 써야 전송 중에 원본이 변해도 안전함)
-		pParam->matImage = m_CameraManager.m_matLiveImage[0].clone();
-		pParam->nPlateId = m_nPlateId;
-
-		// 3. 별도 스레드로 전송 (이 함수는 실행 즉시 종료되어 UI와 촬영을 방해하지 않음)
-		AfxBeginThread(ThreadReclassify, pParam);
-
-		// 화면 하단에 로그만 살짝 남김 (AfxMessageBox는 화면을 가리니 주의)
-		m_CameraManager.WriteLog(0, _T("정상"), _T("수동 재분류 요청 전송 중..."));
+		// 버튼 텍스트를 변경해서 사용자에게 알려주면 더 좋습니다.
+		SetDlgItemText(IDC_RECLASSIFY_BTN, _T("일반모드 복귀"));
+	}
+	else {
+		m_CameraManager.m_nCurrentMode = SystemMode::NORMAL;
+		m_CameraManager.WriteLog(0, _T("알림"), _T("시스템 모드 변경: [일반 분류 모드]"));
+		SetDlgItemText(IDC_RECLASSIFY_BTN, _T("재분류 모드"));
 	}
 }
 
@@ -1253,6 +1253,25 @@ UINT CPylonSampleProgramDlg::ThreadReclassify(LPVOID pParam)
 		pData->pDlg->m_CameraManager.SendImageToAI(0, pData->matImage, pData->nPlateId, 1, CmdID::IMG_RECLASSIFY);
 
 		delete pData; // 메모리 해제
+	}
+	return 0;
+}
+
+LRESULT CPylonSampleProgramDlg::OnUpdateLog(WPARAM wParam, LPARAM lParam)
+{
+	CString* pStrLog = (CString*)wParam;
+	if (pStrLog)
+	{
+		// 변수 m_listLog를 직접 쓰거나 GetDlgItem을 사용
+		CListBox* pListBox = (CListBox*)GetDlgItem(IDC_LIST_LOG);
+		if (pListBox)
+		{
+			int nIndex = pListBox->AddString(*pStrLog);
+			pListBox->SetCurSel(nIndex);
+
+			if (pListBox->GetCount() > 500) pListBox->DeleteString(0);
+		}
+		delete pStrLog; // 동적 할당된 문자열 삭제
 	}
 	return 0;
 }
