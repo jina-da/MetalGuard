@@ -142,7 +142,8 @@ public:
     long m_iSkippiedFrame[CAM_NUM];
     long m_iGrabbedFrame[CAM_NUM];
     int m_imgNjm;
-    int m_nNextPlateId = 1;
+
+	int m_nNextPlateId = 1; // 다음 촬영 시 사용할 번호판 ID (초기값 1)
 
     // --- 멤버 함수 선언 ---
     int FindCamera(char szCamName[CAM_NUM][100], char szCamSerialNumber[CAM_NUM][100], char szInterfacName[CAM_NUM][100], int* nCamNumber);

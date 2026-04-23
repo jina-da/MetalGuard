@@ -1052,7 +1052,7 @@ bool CCameraManager::CheckServerConnection()
 		char buf[1];
 		int recvRet = recv(m_hSocket, buf, 1, MSG_PEEK);
 
-		// [수정] recvRet == 0 인 경우(서버가 명시적으로 닫음)에만 연결 종료 처리
+		// recvRet == 0 인 경우(서버가 명시적으로 닫음)에만 연결 종료 처리
 		if (recvRet == 0) {
 			closesocket(m_hSocket);
 			m_hSocket = INVALID_SOCKET;
@@ -1109,10 +1109,8 @@ void CCameraManager::SendImageToAI(int nCameraIndex, cv::Mat& matImage, int nPla
 		WriteLog(nCameraIndex, _T("정상"), strLog);
 	}
 	catch (const std::exception& e) {
-		// [수정 포인트] 에러 로그는 찍되, 연결 상태를 false로 바꾸지 않습니다.
+		// 에러 로그는 찍되, 연결 상태를 false로 바꾸지 않음
 		WriteLog(nCameraIndex, _T("에러"), (CString)e.what());
-
-		// m_bIsServerConnected = false; <-- 이 부분을 반드시 주석 처리하세요.
 	}
 }
 
@@ -1135,14 +1133,13 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 	cv::cvtColor(currentFrame, gray, cv::COLOR_BGR2GRAY);
 	cv::GaussianBlur(gray, gray, cv::Size(7, 7), 0); // 블러를 더 강하게 (노이즈 제거)
 
-	// [배경 학습] 프로그램 시작 시 혹은 '대기 중'일 때 배경을 업데이트
-	// m_matPrevFrame을 '기준 배경'으로 활용합니다.
+	// 프로그램 시작 시 혹은 '대기 중'일 때 배경을 업데이트
 	if (m_matPrevFrame[nCamIndex].empty()) {
 		gray.copyTo(m_matPrevFrame[nCamIndex]);
 		return false;
 	}
 
-	// [핵심] 기준 배경과 현재 프레임의 차이를 계산
+	// 기준 배경과 현재 프레임의 차이를 계산
 	cv::absdiff(m_matPrevFrame[nCamIndex], gray, diff);
 
 	// 임계값 설정 (조명에 따라 40~70 사이 조절)
@@ -1154,9 +1151,9 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 
 	int nChangedPixels = cv::countNonZero(diff);
 
-	// [디버깅] 픽셀 변화량 확인
-	// CString str; str.Format(_T("Cam%d Diff: %d\n"), nCamIndex, nChangedPixels);
-	// OutputDebugString(str);
+	// 픽셀 변화량 확인
+	 CString str; str.Format(_T("Cam%d Diff: %d\n"), nCamIndex, nChangedPixels);
+	 OutputDebugString(str);
 
 	// 물체가 없을 때는 배경을 아주 천천히 업데이트 (조명 변화 적응용)
 	if (nChangedPixels < 500) {
@@ -1170,9 +1167,11 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr& ptrGrabResult)
 {
 	int nCameraIndex = (int)ptrGrabResult->GetCameraContext();
+	const int nTotalShots = 8; // 서버 요청에 따라 4 -> 8장으로 변경
+
 	try {
 		if (ptrGrabResult->GrabSucceeded()) {
-			// 1. 이미지 변환
+			// 1. 이미지 변환 및 Mat 생성
 			CPylonImage pylonImage;
 			pylonImage.AttachGrabResultBuffer(ptrGrabResult);
 			CImageFormatConverter converter;
@@ -1181,7 +1180,7 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 			converter.Convert(targetImage, pylonImage);
 			cv::Mat matOriginal(ptrGrabResult->GetHeight(), ptrGrabResult->GetWidth(), CV_8UC3, (uint8_t*)targetImage.GetBuffer());
 
-			// 2. 변수 설정
+			// 2. ROI 및 시간 변수
 			int centerX = matOriginal.cols / 2;
 			int centerY = matOriginal.rows / 2;
 			cv::Rect roiSend(centerX - 130, centerY - 130, 260, 260);
@@ -1194,22 +1193,23 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 			cv::Scalar rectColor = cv::Scalar(0, 255, 0);
 			int thickness = 2;
 
-			// 3. 감지 및 촬영 제어
+			// 3. 감지 및 촬영 제어 로직
 			if (bIsConnected) {
 				if (!m_bObjectDetected[nCameraIndex]) {
-					// [쿨다운] 촬영 종료 후 2초간은 아예 DetectObject 근처에도 안 감
-					if (dwCurrentTime - m_dwLastSendTime[nCameraIndex] > 2000) {
+					// [쿨다운 설정] 촬영 시간이 2초(8장 x 0.25)이므로, 
+					// 물체가 완전히 빠져나갈 때까지 최소 2.5초 이상 대기하도록 설정
+					if (dwCurrentTime - m_dwLastSendTime[nCameraIndex] > 2500) {
 						cv::Mat matForDetect = matOriginal(roiSend).clone();
 						if (DetectObject(nCameraIndex, matForDetect)) {
 							m_bObjectDetected[nCameraIndex] = true;
 							m_nTriggeredShotCount[nCameraIndex] = 0;
 							nShotIndex[nCameraIndex] = 1;
-							m_dwLastSendTime[nCameraIndex] = dwCurrentTime - 250; // 즉시 시작
-							WriteLog(nCameraIndex, _T("알림"), _T("물체 감지됨"));
+							m_dwLastSendTime[nCameraIndex] = dwCurrentTime - 250; // 즉시 전송 시작
+							WriteLog(nCameraIndex, _T("알림"), _T("새로운 물체 감지 - 8장 촬영 시작"));
 						}
 					}
 					else {
-						rectColor = cv::Scalar(255, 255, 0); // 노란색: 쿨다운 중
+						rectColor = cv::Scalar(255, 255, 0); // 노란색: 다음 물체 대기 중
 					}
 				}
 
@@ -1219,12 +1219,13 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 				}
 			}
 
-			// 4. 화면 출력용 가이드라인
+			// 4. 화면 출력 (테두리 및 라이브 이미지 복사)
 			cv::rectangle(matOriginal, roiDisplay, rectColor, thickness);
 			matOriginal.copyTo(m_matLiveImage[nCameraIndex]);
 
-			// 5. 서버 전송 (실제 촬영 로직)
+			// 5. 서버 전송 로직 (8장 전송)
 			if (bIsConnected && m_bObjectDetected[nCameraIndex]) {
+				// 0.25초(250ms) 간격 체크
 				if (dwCurrentTime - m_dwLastSendTime[nCameraIndex] >= 250) {
 					cv::Mat matCropped = matOriginal(roiSend).clone();
 					std::vector<uchar> imgBuf;
@@ -1237,7 +1238,7 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 					j["timestamp"] = (LPCSTR)CT2A(CTime::GetCurrentTime().Format(_T("%Y-%m-%d %H:%M:%S")));
 					j["plate_id"] = m_nNextPlateId;
 					j["shot_index"] = nShotIndex[nCameraIndex];
-					j["total_shots"] = nTotalShots;
+					j["total_shots"] = nTotalShots; // 8장으로 전송됨
 
 					std::string jsonPayload = j.dump();
 					PacketHeader header;
@@ -1245,6 +1246,7 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 					header.cmdId = htons(static_cast<uint16_t>(m_nCurrentMode));
 					header.bodySize = htonl((uint32_t)jsonPayload.length());
 
+					// 패킷 전송
 					send(m_hSocket, (char*)&header, sizeof(header), 0);
 					send(m_hSocket, jsonPayload.c_str(), (int)jsonPayload.length(), 0);
 					uint32_t netImageLen = htonl((uint32_t)imgBuf.size());
@@ -1255,11 +1257,12 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 					m_nTriggeredShotCount[nCameraIndex]++;
 					nShotIndex[nCameraIndex]++;
 
+					// [종료 조건] 8장을 다 찍었을 때
 					if (m_nTriggeredShotCount[nCameraIndex] >= nTotalShots) {
 						m_bObjectDetected[nCameraIndex] = false;
 						m_nNextPlateId++;
-						m_dwLastSendTime[nCameraIndex] = GetTickCount(); // 2초 대기 시작 시점 고정
-						WriteLog(nCameraIndex, _T("정상"), _T("촬영 완료 - 대기 모드 전환"));
+						m_dwLastSendTime[nCameraIndex] = GetTickCount(); // 2.5초 쿨다운 시작점
+						WriteLog(nCameraIndex, _T("정상"), _T("8장 촬영 및 전송 완료"));
 					}
 				}
 			}
