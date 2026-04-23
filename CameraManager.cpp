@@ -1133,43 +1133,45 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 
 	cv::Mat gray, diff;
 	cv::cvtColor(currentFrame, gray, cv::COLOR_BGR2GRAY);
-	cv::GaussianBlur(gray, gray, cv::Size(5, 5), 0); // 가우시안 블러 크기를 키워 노이즈 억제
+	cv::GaussianBlur(gray, gray, cv::Size(7, 7), 0); // 블러를 더 강하게 (노이즈 제거)
 
-	// [수정] 첫 실행 시 이전 프레임이 없으면 배경만 저장하고 10프레임 정도는 무시해야 함
+	// [배경 학습] 프로그램 시작 시 혹은 '대기 중'일 때 배경을 업데이트
+	// m_matPrevFrame을 '기준 배경'으로 활용합니다.
 	if (m_matPrevFrame[nCamIndex].empty()) {
 		gray.copyTo(m_matPrevFrame[nCamIndex]);
-		m_nWaitFrameCount[nCamIndex] = 0; // 대기 카운트 초기화 (헤더에 변수 추가 필요)
 		return false;
 	}
 
-	// [추가] 초기 안정화 시간 (약 10프레임 동안은 움직임 감지 안 함)
-	if (m_nWaitFrameCount[nCamIndex] < 10) {
-		gray.copyTo(m_matPrevFrame[nCamIndex]);
-		m_nWaitFrameCount[nCamIndex]++;
-		return false;
-	}
-
-	// 차이 계산
+	// [핵심] 기준 배경과 현재 프레임의 차이를 계산
 	cv::absdiff(m_matPrevFrame[nCamIndex], gray, diff);
-	cv::threshold(diff, diff, 60, 255, cv::THRESH_BINARY); // 임계값을 45 -> 60으로 상향
+
+	// 임계값 설정 (조명에 따라 40~70 사이 조절)
+	cv::threshold(diff, diff, 50, 255, cv::THRESH_BINARY);
+
+	// 노이즈 제거 (작은 점들은 지워버림)
+	cv::erode(diff, diff, cv::Mat(), cv::Point(-1, -1), 1);
+	cv::dilate(diff, diff, cv::Mat(), cv::Point(-1, -1), 2);
 
 	int nChangedPixels = cv::countNonZero(diff);
-	gray.copyTo(m_matPrevFrame[nCamIndex]);
 
-	// [디버깅] 실제 픽셀 변화량을 출력창에 찍어보세요. 너무 낮으면 기준을 높여야 함.
-	// TRACE(_T("Changed Pixels: %d\n"), nChangedPixels);
+	// [디버깅] 픽셀 변화량 확인
+	// CString str; str.Format(_T("Cam%d Diff: %d\n"), nCamIndex, nChangedPixels);
+	// OutputDebugString(str);
 
-	return (nChangedPixels > 1500); // 기준치를 500 -> 1500으로 상향 (환경에 맞게 조절)
+	// 물체가 없을 때는 배경을 아주 천천히 업데이트 (조명 변화 적응용)
+	if (nChangedPixels < 500) {
+		cv::addWeighted(m_matPrevFrame[nCamIndex], 0.95, gray, 0.05, 0, m_matPrevFrame[nCamIndex]);
+	}
+
+	// 1500~2000 픽셀 이상 변해야 물체로 인정
+	return (nChangedPixels > 2000);
 }
 
 void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr& ptrGrabResult)
 {
 	int nCameraIndex = (int)ptrGrabResult->GetCameraContext();
-
-	try
-	{
-		if (ptrGrabResult->GrabSucceeded())
-		{
+	try {
+		if (ptrGrabResult->GrabSucceeded()) {
 			// 1. 이미지 변환
 			CPylonImage pylonImage;
 			pylonImage.AttachGrabResultBuffer(ptrGrabResult);
@@ -1177,10 +1179,9 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 			converter.OutputPixelFormat = PixelType_BGR8packed;
 			CPylonImage targetImage;
 			converter.Convert(targetImage, pylonImage);
-
 			cv::Mat matOriginal(ptrGrabResult->GetHeight(), ptrGrabResult->GetWidth(), CV_8UC3, (uint8_t*)targetImage.GetBuffer());
 
-			// 2. ROI 설정
+			// 2. 변수 설정
 			int centerX = matOriginal.cols / 2;
 			int centerY = matOriginal.rows / 2;
 			cv::Rect roiSend(centerX - 130, centerY - 130, 260, 260);
@@ -1188,69 +1189,47 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 			roiSend &= cv::Rect(0, 0, matOriginal.cols, matOriginal.rows);
 			roiDisplay &= cv::Rect(0, 0, matOriginal.cols, matOriginal.rows);
 
-			// 3. 서버 연결 체크
+			DWORD dwCurrentTime = GetTickCount();
 			bool bIsConnected = CheckServerConnection();
-
-			// 4. 상태 결정 및 시각화 준비
-			cv::Scalar rectColor;
+			cv::Scalar rectColor = cv::Scalar(0, 255, 0);
 			int thickness = 2;
-			CString strStatusText = _T("");
 
-			if (!bIsConnected) {
-				rectColor = cv::Scalar(128, 128, 128);
-				strStatusText = _T("SERVER DISCONNECTED");
-				thickness = 1;
-				m_bObjectDetected[nCameraIndex] = false;
-			}
-			else {
-				// [핵심 수정] 촬영 중이 아닐 때 + 마지막 촬영 후 2초가 지났을 때만 감지 허용
+			// 3. 감지 및 촬영 제어
+			if (bIsConnected) {
 				if (!m_bObjectDetected[nCameraIndex]) {
-					// --- 추가된 조건: 촬영 종료 후 2초간은 재감지 금지 ---
-					if (GetTickCount() - m_dwLastSendTime[nCameraIndex] > 2000)
-					{
+					// [쿨다운] 촬영 종료 후 2초간은 아예 DetectObject 근처에도 안 감
+					if (dwCurrentTime - m_dwLastSendTime[nCameraIndex] > 2000) {
 						cv::Mat matForDetect = matOriginal(roiSend).clone();
 						if (DetectObject(nCameraIndex, matForDetect)) {
 							m_bObjectDetected[nCameraIndex] = true;
 							m_nTriggeredShotCount[nCameraIndex] = 0;
 							nShotIndex[nCameraIndex] = 1;
-							m_dwLastSendTime[nCameraIndex] = 0; // 첫 장 즉시 전송용
-							WriteLog(nCameraIndex, _T("정상"), _T("물체 감지! 4장 촬영 시작"));
+							m_dwLastSendTime[nCameraIndex] = dwCurrentTime - 250; // 즉시 시작
+							WriteLog(nCameraIndex, _T("알림"), _T("물체 감지됨"));
 						}
+					}
+					else {
+						rectColor = cv::Scalar(255, 255, 0); // 노란색: 쿨다운 중
 					}
 				}
 
 				if (m_bObjectDetected[nCameraIndex]) {
-					rectColor = cv::Scalar(0, 0, 255);
-					strStatusText = _T("CAPTURING...");
-					thickness = 5;
-				}
-				else {
-					rectColor = cv::Scalar(0, 255, 0);
-					thickness = 2;
+					rectColor = cv::Scalar(0, 0, 255); // 빨간색: 촬영 중
+					thickness = 4;
 				}
 			}
 
-			// 5. 화면 출력
+			// 4. 화면 출력용 가이드라인
 			cv::rectangle(matOriginal, roiDisplay, rectColor, thickness);
-			if (!strStatusText.IsEmpty()) {
-				cv::putText(matOriginal, (LPCSTR)CT2A(strStatusText), cv::Point(roiDisplay.x, roiDisplay.y - 15),
-					cv::FONT_HERSHEY_SIMPLEX, 1.0, rectColor, 2);
-			}
-
 			matOriginal.copyTo(m_matLiveImage[nCameraIndex]);
 
-			// 6. 서버 전송
-			if (bIsConnected && m_bObjectDetected[nCameraIndex])
-			{
-				DWORD dwCurrentTime = GetTickCount();
-				if (dwCurrentTime - m_dwLastSendTime[nCameraIndex] >= 250)
-				{
+			// 5. 서버 전송 (실제 촬영 로직)
+			if (bIsConnected && m_bObjectDetected[nCameraIndex]) {
+				if (dwCurrentTime - m_dwLastSendTime[nCameraIndex] >= 250) {
 					cv::Mat matCropped = matOriginal(roiSend).clone();
 					std::vector<uchar> imgBuf;
 					std::vector<int> params = { cv::IMWRITE_JPEG_QUALITY, 90 };
 					cv::imencode(".jpg", matCropped, imgBuf, params);
-
-					uint16_t currentCmd = static_cast<uint16_t>(m_nCurrentMode);
 
 					nlohmann::json j;
 					j["mode"] = (m_nCurrentMode == SystemMode::RECLASSIFY) ? "reclassify" : "inspect";
@@ -1263,7 +1242,7 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 					std::string jsonPayload = j.dump();
 					PacketHeader header;
 					header.signature = htons(0x4D47);
-					header.cmdId = htons(currentCmd);
+					header.cmdId = htons(static_cast<uint16_t>(m_nCurrentMode));
 					header.bodySize = htonl((uint32_t)jsonPayload.length());
 
 					send(m_hSocket, (char*)&header, sizeof(header), 0);
@@ -1279,11 +1258,8 @@ void CCameraManager::OnImageGrabbed(CInstantCamera& camera, const CGrabResultPtr
 					if (m_nTriggeredShotCount[nCameraIndex] >= nTotalShots) {
 						m_bObjectDetected[nCameraIndex] = false;
 						m_nNextPlateId++;
-
-						// [매우 중요] 완료 시점의 시간을 기록하여 '2초 대기'의 기준점으로 삼음
-						m_dwLastSendTime[nCameraIndex] = GetTickCount();
-
-						WriteLog(nCameraIndex, _T("정상"), _T("4장 전송 완료. (중복 방지 대기 중)"));
+						m_dwLastSendTime[nCameraIndex] = GetTickCount(); // 2초 대기 시작 시점 고정
+						WriteLog(nCameraIndex, _T("정상"), _T("촬영 완료 - 대기 모드 전환"));
 					}
 				}
 			}
