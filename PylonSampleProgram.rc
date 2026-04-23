@@ -28,12 +28,12 @@ LANGUAGE LANG_KOREAN, SUBLANG_DEFAULT
 // TEXTINCLUDE
 //
 
-1 TEXTINCLUDE 
+1 TEXTINCLUDE
 BEGIN
     "resource.h\0"
 END
 
-2 TEXTINCLUDE 
+2 TEXTINCLUDE
 BEGIN
     "#ifndef APSTUDIO_INVOKED\r\n"
     "#include ""targetver.h""\r\n"
@@ -42,7 +42,7 @@ BEGIN
     "\0"
 END
 
-3 TEXTINCLUDE 
+3 TEXTINCLUDE
 BEGIN
     "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
     "#define _AFX_NO_OLE_RESOURCES\r\n"
@@ -52,7 +52,7 @@ BEGIN
     "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)\r\n"
     "LANGUAGE 18, 1\r\n"
     "#pragma code_page(949)\r\n"
-    "#include ""res\\PylonSampleProgram.rc2""  // Microsoft Visual C++ 이외의 다른 도구에서 편집한 리소스입니다.\r\n"
+    "#include ""res\\PylonSampleProgram.rc2""  // Microsoft Visual C++ 이외의 편집기에서 편집한 리소스입니다.\r\n"
     "#include ""l.KOR\\afxres.rc""      // 표준 구성 요소입니다.\r\n"
     "#endif\r\n"
     "\0"
@@ -65,9 +65,6 @@ END
 //
 // Icon
 //
-
-// Icon with lowest ID value placed first to ensure application icon
-// remains consistent on all systems.
 IDR_MAINFRAME           ICON                    "res\\PylonSampleProgram.ico"
 
 
@@ -87,31 +84,121 @@ BEGIN
     DEFPUSHBUTTON   "확인",IDOK,113,41,50,14,WS_GROUP
 END
 
-IDD_PYLONSAMPLEPROGRAM_DIALOG DIALOGEX 0, 0, 775, 452
-STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+// ============================================================
+//  MetalGuard 메인 다이얼로그
+//  레이아웃 (대화 상자 단위: 960 x 580 DLU)
+//
+//  +--[툴바: 라이브 체크박스 | 저장 | 운영모드 콤보]--+
+//  |                                                    |
+//  | [카메라 라이브뷰 430x300] [AI확률 230x160] [판정결과 270x160] |
+//  |                           [시스템상태 230x130] [카메라설정 270x130] |
+//  |                                                    |
+//  | [DB 기록 테이블 670x110]  [로그 285x110]           |
+//  +----------------------------------------------------+
+// ============================================================
+
+IDD_PYLONSAMPLEPROGRAM_DIALOG DIALOGEX 0, 0, 960, 580
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
 EXSTYLE WS_EX_APPWINDOW
-CAPTION "PylonSampleProgram"
+CAPTION "MetalGuard - EfficientNet-B2 기반 금속 표면 불량 자동 검출 시스템 (Client)"
 FONT 9, "MS Shell Dlg", 0, 0, 0x1
 BEGIN
-    PUSHBUTTON      "1. Find_Camera",IDC_FIND_CAM_BTN,530,9,70,26
-    CONTROL         "",IDC_CAMERA_LIST,"SysListView32",LVS_REPORT | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,533,43,233,118
-    PUSHBUTTON      "2_1. Open_Camera",IDC_OPEN_CAMERA_BTN,534,168,70,26
-    PUSHBUTTON      "3. Connect_Camera",IDC_CONNECT_CAMERA_BTN,534,208,70,26
-    PUSHBUTTON      "Grab_Single",IDC_GRAB_SINGLE_BTN,534,241,70,26
-    PUSHBUTTON      "2_2. Close_Camera",IDC_CLOSE_CAM_BTN,621,168,70,26
-    PUSHBUTTON      "SoftTrigger_Execute",IDC_SOFT_TRIG_BTN,621,243,88,25
-    PUSHBUTTON      "Exit",IDC_EXIT_BTN,534,279,71,28
-    CONTROL         "Camera0_Live_Grab",IDC_CAM0_LIVE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,9,10,77,14
-    CONTROL         "",IDC_CAM0_DISPLAY,"Static",SS_BLACKFRAME,8,30,505,299
-    LTEXT           "",IDC_CAMERA0_STATS,92,11,66,16,0,WS_EX_CLIENTEDGE
-    LTEXT           "",IDC_CAM0_INFO,9,425,504,15,0,WS_EX_STATICEDGE
-    LTEXT           "현재 선택한 카메라",IDC_STATIC,608,10,71,9
-    CTEXT           "",IDC_SELECT_CAMERA,608,24,138,14,0,WS_EX_STATICEDGE
-    PUSHBUTTON      "Save_Image",IDC_SAVE_IMG_BTN,621,279,71,28
-    PUSHBUTTON      "Trigger_설정",IDC_BUTTON5,534,322,71,28
-    PUSHBUTTON      "TWO_Camera_Live",IDC_TWO_CAMERA_LIVE_BTN,534,362,95,24
-    PUSHBUTTON      "Reclassify",IDC_RECLASSIFY_BTN,621,209,70,26
-    LISTBOX         IDC_LIST_LOG,9,344,504,68,LBS_SORT | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    // ── 툴바 ────────────────────────────────────────────────────
+    CONTROL         "카메라 라이브",IDC_CAM0_LIVE,"Button",BS_AUTOCHECKBOX|WS_TABSTOP,7,6,72,13
+    PUSHBUTTON      "사진 수동 저장",IDC_SAVE_IMG_BTN,84,4,65,15
+    LTEXT           "운영 모드:",IDC_STATIC,157,7,42,10
+    COMBOBOX        IDC_MODE_COMBO,202,4,110,60,CBS_DROPDOWNLIST|WS_VSCROLL|WS_TABSTOP
+
+    // ── 카메라 라이브뷰 (좌측 상단) ────────────────────────────
+    LTEXT           "실시간 카메라 스트리밍 (Live View)",IDC_STATIC,7,22,160,10
+    CONTROL         "",IDC_CAM0_DISPLAY,"Static",SS_BLACKFRAME|SS_NOTIFY,7,33,430,300
+
+    // ── AI 모델 추론 확률 (중앙) ──────────────────────────────
+    GROUPBOX        "AI 모델 추론 확률 (EfficientNet-B2)",IDC_PROB_GROUP,445,22,230,165
+
+    LTEXT           "Normal  :",IDC_STATIC,453,38,48,10
+    LTEXT           "- %",IDC_PROB_NORMAL,504,38,50,10
+
+    LTEXT           "Crack   :",IDC_STATIC,453,53,48,10
+    LTEXT           "- %",IDC_PROB_CRACK,504,53,50,10
+
+    LTEXT           "Hole    :",IDC_STATIC,453,68,48,10
+    LTEXT           "- %",IDC_PROB_HOLE,504,68,50,10
+
+    LTEXT           "Rust    :",IDC_STATIC,453,83,48,10
+    LTEXT           "- %",IDC_PROB_RUST,504,83,50,10
+
+    LTEXT           "Scratch :",IDC_STATIC,453,98,48,10
+    LTEXT           "- %",IDC_PROB_SCRATCH,504,98,50,10
+
+    LTEXT           "불량 유형 :",IDC_STATIC,453,116,50,10
+    LTEXT           "-",IDC_DEFECT_CLASS,506,116,90,10
+
+    LTEXT           "AI 추론   :",IDC_STATIC,453,131,50,10
+    LTEXT           "- ms",IDC_INFER_MS,506,131,80,10
+
+    LTEXT           "파이프라인 :",IDC_STATIC,453,146,54,10
+    LTEXT           "- ms",IDC_PIPELINE_MS,510,146,80,10
+
+    // ── 최종 판정 결과 (우측 상단) ──────────────────────────────
+    GROUPBOX        "최종 판정 결과",IDC_VERDICT_GROUP,683,22,272,165
+
+    // 판정 텍스트 (크게 표시)
+    LTEXT           "대기 중...",IDC_VERDICT_DISPLAY,693,40,252,42
+
+    // LED 상태
+    LTEXT           "GREEN LED :",IDC_STATIC,693,92,58,10
+    LTEXT           "OFF",IDC_LED_GREEN,754,92,50,10
+
+    LTEXT           "RED LED   :",IDC_STATIC,693,107,58,10
+    LTEXT           "OFF",IDC_LED_RED,754,107,50,10
+
+    LTEXT           "YELLOW LED:",IDC_STATIC,693,122,58,10
+    LTEXT           "OFF",IDC_LED_YELLOW,754,122,50,10
+
+    // 부저 상태
+    LTEXT           "부저 상태  :",IDC_STATIC,693,137,58,10
+    LTEXT           "없음",IDC_CAM0_INFO,754,137,90,10
+
+    // ── 시스템 상태 (중앙 하단) ──────────────────────────────────
+    GROUPBOX        "시스템 상태",IDC_STATUS_GROUP,445,193,230,140
+
+    LTEXT           "서버 연결  :",IDC_STATIC,453,208,58,10
+    LTEXT           "미연결",IDC_STATUS_SERVER,514,208,80,10
+
+    LTEXT           "게이트 A   :",IDC_STATIC,453,223,58,10
+    LTEXT           "대기",IDC_STATUS_GATE_A,514,223,80,10
+
+    LTEXT           "게이트 B   :",IDC_STATIC,453,238,58,10
+    LTEXT           "대기",IDC_STATUS_GATE_B,514,238,80,10
+
+    LTEXT           "추론 상태  :",IDC_STATIC,453,253,58,10
+    LTEXT           "-",IDC_SELECT_CAMERA,514,253,80,10
+
+    // ── 카메라 설정 / 시스템 버튼 (우측 중간) ──────────────────
+    LTEXT           "카메라 설정",IDC_STATIC,683,193,80,10
+    CONTROL         "",IDC_CAMERA_LIST,"SysListView32",LVS_REPORT|LVS_ALIGNLEFT|WS_BORDER|WS_TABSTOP,683,205,272,70
+
+    PUSHBUTTON      "1. Find_Camera",IDC_FIND_CAM_BTN,683,279,88,16
+    PUSHBUTTON      "2_1. Open_Camera",IDC_OPEN_CAMERA_BTN,683,298,88,16
+    PUSHBUTTON      "2_2. Close_Camera",IDC_CLOSE_CAM_BTN,775,298,88,16
+    PUSHBUTTON      "3. Connect_Camera",IDC_CONNECT_CAMERA_BTN,683,317,88,16
+    PUSHBUTTON      "재분류 모드",IDC_RECLASSIFY_BTN,775,317,88,16
+    PUSHBUTTON      "Grab_Single",IDC_GRAB_SINGLE_BTN,683,336,88,16
+    PUSHBUTTON      "SoftTrigger",IDC_SOFT_TRIG_BTN,775,336,88,16
+    PUSHBUTTON      "Trigger_설정",IDC_BUTTON5,683,355,88,16
+    PUSHBUTTON      "Exit",IDC_EXIT_BTN,775,355,88,16
+
+    // ── DB 기록 테이블 (하단 좌측) ──────────────────────────────
+    LTEXT           "DB 조회 및 수동 재분류 (최근 판정 기록)",IDC_STATIC,7,338,200,10
+    CONTROL         "",IDC_DB_LIST,"SysListView32",LVS_REPORT|LVS_ALIGNLEFT|WS_BORDER|WS_TABSTOP,7,350,668,105
+
+    // ── 시스템 로그 (하단 우측) ──────────────────────────────────
+    LTEXT           "시스템 로그",IDC_STATIC,683,460,60,10
+    LISTBOX         IDC_LIST_LOG,683,472,272,98,LBS_NOINTEGRALHEIGHT|WS_VSCROLL|WS_TABSTOP
+
+    // ── 하단 상태바 영역 ────────────────────────────────────────
+    LTEXT           "",IDC_CAMERA0_STATS,7,460,400,10,0,WS_EX_STATICEDGE
 END
 
 
@@ -138,12 +225,12 @@ BEGIN
         BLOCK "041203b5"
         BEGIN
             VALUE "CompanyName", "TODO: <회사 이름>"
-            VALUE "FileDescription", "TODO: <파일 설명>"
+            VALUE "FileDescription", "MetalGuard - 금속 표면 불량 자동 검출 시스템"
             VALUE "FileVersion", "1.0.0.1"
-            VALUE "InternalName", "PylonSampleProgram.exe"
+            VALUE "InternalName", "MetalGuard.exe"
             VALUE "LegalCopyright", "TODO: (c) <회사 이름>.  All rights reserved."
-            VALUE "OriginalFilename", "PylonSampleProgram.exe"
-            VALUE "ProductName", "TODO: <제품 이름>"
+            VALUE "OriginalFilename", "MetalGuard.exe"
+            VALUE "ProductName", "MetalGuard"
             VALUE "ProductVersion", "1.0.0.1"
         END
     END
@@ -172,7 +259,7 @@ BEGIN
 
     IDD_PYLONSAMPLEPROGRAM_DIALOG, DIALOG
     BEGIN
-        BOTTOMMARGIN, 451
+        BOTTOMMARGIN, 579
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -200,27 +287,3 @@ BEGIN
 END
 
 #endif    // 한국어(대한민국) resources
-/////////////////////////////////////////////////////////////////////////////
-
-
-
-#ifndef APSTUDIO_INVOKED
-/////////////////////////////////////////////////////////////////////////////
-//
-// Generated from the TEXTINCLUDE 3 resource.
-//
-#define _AFX_NO_SPLITTER_RESOURCES
-#define _AFX_NO_OLE_RESOURCES
-#define _AFX_NO_TRACKER_RESOURCES
-#define _AFX_NO_PROPERTY_RESOURCES
-
-#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)
-LANGUAGE 18, 1
-#pragma code_page(949)
-#include "res\PylonSampleProgram.rc2"  // Microsoft Visual C++ 이외의 다른 도구에서 편집한 리소스입니다.
-#include "l.KOR\afxres.rc"      // 표준 구성 요소입니다.
-#endif
-
-/////////////////////////////////////////////////////////////////////////////
-#endif    // not APSTUDIO_INVOKED
-
