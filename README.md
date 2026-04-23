@@ -8,6 +8,18 @@
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.x-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
 
 ---
+![cnn_ai_01](assets/cnn_ai_01.png)
+---
+![cnn_ai_02](assets/cnn_ai_02.png)
+---
+![cnn_ai_03](assets/cnn_ai_03.png)
+---
+![cnn_ai_04](assets/cnn_ai_04.png)
+---
+![cnn_ai_05](assets/cnn_ai_05.png)
+---
+![cnn_ai_06](assets/cnn_ai_06.png)
+---
 
 ## 📌 프로젝트 개요
 
