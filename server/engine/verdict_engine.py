@@ -14,6 +14,7 @@ Queue에서 ImageTask를 꺼내 AI 추론 → 판정 → DB 저장 → MFC/아�
 """
 
 import logging
+import os
 import queue
 import threading
 import time
@@ -29,10 +30,11 @@ from server.db.db_manager import DBManager
 
 logger = logging.getLogger(__name__)
 
+# 이미지 저장 루트 경로 (WSL → Windows 경로)
+IMAGE_SAVE_ROOT = "/mnt/c/Users/lms/Desktop/metalguard_image"
+
 # AI 응답 불량 확률 키 목록
 DEFECT_KEYS = ["prob_crack", "prob_hole", "prob_rust", "prob_scratch"]
-
-PLATE_BUFFER_EXPIRE_SEC = 4.0  # 버퍼 만료 시간 (철판 목표 1000ms + 여유)
 
 
 class PlateBuffer:
@@ -60,12 +62,21 @@ class PlateBuffer:
         return len(self.results) >= self.total_shots
 
     def get_final_verdict(self, is_reclassify: bool = False) -> tuple[str, str]:
-        if "FAIL" in self.verdicts:
-            fail_idx = self.verdicts.index("FAIL")
-            return "FAIL", self.defect_classes[fail_idx]
-        elif "UNCERTAIN" in self.verdicts:
+        fail_count = self.verdicts.count("FAIL")
+        uncertain_count = self.verdicts.count("UNCERTAIN")
+
+        if fail_count >= 2:
+            # FAIL 2장 이상 → FAIL (가장 많이 나온 defect_class 사용)
+            fail_defects = [
+                self.defect_classes[i]
+                for i, v in enumerate(self.verdicts) if v == "FAIL"
+            ]
+            majority_defect = max(set(fail_defects), key=fail_defects.count)
+            return "FAIL", majority_defect
+        elif fail_count == 0 and uncertain_count >= 2:
+            # FAIL 없고 UNCERTAIN 2장 이상 → UNCERTAIN (재분류면 FAIL)
             if is_reclassify:
-                return "FAIL", "unknown"  # 재분류 UNCERTAIN → FAIL
+                return "FAIL", "unknown"
             return "UNCERTAIN", "unknown"
         else:
             return "PASS", "normal"
@@ -146,7 +157,7 @@ class VerdictEngine:
         with self._plate_lock:
             expired = [
                 pid for pid, buf in self._plate_buffer.items()
-                if now - buf.first_received_at > PLATE_BUFFER_EXPIRE_SEC
+                if now - buf.first_received_at > config.PLATE_BUFFER_EXPIRE_SEC
             ]
             for plate_id in expired:
                 buf = self._plate_buffer[plate_id]
@@ -219,7 +230,10 @@ class VerdictEngine:
             f"cmd={task.cmd_id} | db={inspection_id}"
         )
 
-        # 7. pipeline_log DB 저장 (샘플링 적용)
+        # 7. 이미지 저장 (분류/재분류 폴더 분리, verdict별 하위 폴더)
+        self._save_image(task, verdict, defect_class)
+
+        # 8. pipeline_log DB 저장 (샘플링 적용)
         if inspection_id:
             self._save_pipeline_log(inspection_id, inference_ms, pipeline_ms)
 
@@ -303,6 +317,35 @@ class VerdictEngine:
     # ──────────────────────────────────────────────
     # DB 저장
     # ──────────────────────────────────────────────
+
+    def _save_image(self, task: ImageTask, verdict: str, defect_class: str) -> None:
+        """
+        이미지를 로컬에 저장.
+        저장 경로: {IMAGE_SAVE_ROOT}/{classify|reclassify}/{pass|fail|uncertain}/
+        파일명: plate{plate_id}_shot{shot_index}_{defect_class}_{timestamp}.jpg
+        """
+        try:
+            mode_dir = "reclassify" if task.cmd_id == CmdID.IMG_RECLASSIFY else "classify"
+            verdict_dir = verdict.lower()  # pass / fail / uncertain
+
+            save_dir = os.path.join(IMAGE_SAVE_ROOT, mode_dir, verdict_dir)
+            os.makedirs(save_dir, exist_ok=True)  # 폴더 없으면 자동 생성
+
+            # 파일명: plate1_shot2_scratch_20260423_09-39-53.jpg
+            ts = datetime.now().strftime("%Y%m%d_%H-%M-%S")
+            filename = (
+                f"plate{task.plate_id}_shot{task.shot_index}"
+                f"_{defect_class}_{ts}.jpg"
+            )
+            filepath = os.path.join(save_dir, filename)
+
+            with open(filepath, "wb") as f:
+                f.write(task.image_bytes)
+
+            logger.debug(f"[이미지 저장] {filepath}")
+
+        except Exception as e:
+            logger.error(f"[이미지 저장 실패] plate={task.plate_id} shot={task.shot_index}: {e}")
 
     def _save_inspection(
         self,

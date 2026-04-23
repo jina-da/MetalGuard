@@ -16,14 +16,14 @@ DB_PASSWORD = "1234"
 DB_NAME     = "metalguard_db"
 
 # ── 판정 임계값 (김범준 튜닝 기준, 변경 시 여기만 수정) ──
-PASS_THRESHOLD      = 0.80   # normal 확률 >= 0.80 이면 PASS
-UNCERTAIN_THRESHOLD = 0.60   # max_prob < 0.60 이면 UNCERTAIN
+PASS_THRESHOLD = 0.70        # normal 확률 >= 0.70 이면 PASS
+UNCERTAIN_THRESHOLD = 0.40   # max_prob < 0.40 이면 UNCERTAIN
 # FAIL = 위 두 조건 모두 해당 없음
 
 # ── 타임아웃 ─────────────────────────────────────────
 # 기존 150ms(장 단위) → 1000ms(철판 단위)로 변경
-# N=4장, 간격=0.25초 기준 실제 소요 ≈ 754ms, 여유 약 246ms
-PIPELINE_TIMEOUT_MS = 1000
+# N=8장, 간격=0.25초 기준 실제 소요 ≈ 2000ms
+PIPELINE_TIMEOUT_MS = 2000
 
 
 # ── 모델 버전 ─────────────────────────────────────────
@@ -33,6 +33,7 @@ MODEL_VERSION_ID = 3
 SEND_RESULT_TO_MFC = True    # True로 바꾸면 MFC 전송 활성화
 
 # ── 철판 촬영 파라미터 ────────────────────────────────
-SHOT_COUNT = 4               # 철판 1개당 촬영 장수
+SHOT_COUNT = 8               # 철판 1개당 촬영 장수
 SHOT_INTERVAL_SEC = 0.25     # 촬영 간격 (초)
 MOTION_THRESHOLD = 500       # 프레임 차분 임계값 (픽셀 수), 실측 후 조정 가능
+PLATE_BUFFER_EXPIRE_SEC = 6.0  # 8장 × 0.25초 + 여유
