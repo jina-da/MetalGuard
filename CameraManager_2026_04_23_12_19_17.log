@@ -1,9 +1,0 @@
-[12:19:25] [ CAM : 0 ] [[ SetInteger ]
-] Value = 0 must be equal or greater than Min = 32.
-[12:19:25] [ CAM : 0 ] [[ SetInteger ]
-] Value = 0 must be equal or greater than Min = 1.
-[12:19:26] [ CAM : 0 ] [정상] 4장 전송 완료. (중복 방지 대기 중)
-[12:19:30] [ CAM : 0 ] [정상] 물체 감지! 4장 촬영 시작
-[12:19:31] [ CAM : 0 ] [정상] 4장 전송 완료. (중복 방지 대기 중)
-[12:19:33] [ CAM : 0 ] [정상] 물체 감지! 4장 촬영 시작
-[12:19:33] [ CAM : 0 ] [정상] 4장 전송 완료. (중복 방지 대기 중)
