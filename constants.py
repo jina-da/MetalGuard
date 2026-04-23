@@ -32,9 +32,9 @@ class CmdID:
     INFER_RES          = 102  # 추론 응답: AI서버 → 운용서버
 
     # ── 아두이노 판정 신호 ────────────────────
-    VERDICT_PASS       = 201  # 정상: "P\n"
-    VERDICT_FAIL       = 202  # 불량: "F\n"
-    VERDICT_UNCERTAIN  = 203  # 미분류: "U\n"
+    VERDICT_PASS      = 201  # 운용서버 → 아두이노PC
+    VERDICT_FAIL      = 202  # 운용서버 → 아두이노PC
+    VERDICT_UNCERTAIN = 203  # 운용서버 → 아두이노PC
 
     # ── MFC 판정 결과 전송 ────────────────────
     RESULT_SEND        = 301  # 판정 결과: 운용서버 → MFC

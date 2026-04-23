@@ -139,15 +139,17 @@ Queue에서 ImageTask 꺼냄
 
 | 판정 | 조건 |
 |------|------|
-| PASS | `prob_normal ≥ 0.80` |
-| UNCERTAIN | `max_prob < 0.60` |
+| PASS | prob_normal ≥ 0.70 |
+| UNCERTAIN | max_prob < 0.40 |
 | FAIL | 위 두 조건 모두 해당 없음 |
 
 ### 종합 판정 로직
 
 | 조건 | 종합 판정 |
 |------|----------|
-| FAIL 1개라도 있으면 | FAIL |
+| FAIL 2장 이상 | FAIL |
+| FAIL 0장 + UNCERTAIN 2장 이상 | UNCERTAIN |
+| 나머지 | PASS |
 | 전부 PASS | PASS |
 | FAIL 없고 UNCERTAIN 있으면 | UNCERTAIN |
 
@@ -164,8 +166,7 @@ Queue에서 ImageTask 꺼냄
 ### PlateBuffer 만료 처리
 
 Queue가 비었을 때 주기적으로 `_cleanup_expired_buffers()` 호출.
-`PLATE_BUFFER_EXPIRE_SEC = 4.0` 초 초과 시 모인 장수로 강제 종합 판정 후 버퍼 제거.
-
+`PLATE_BUFFER_EXPIRE_SEC = 6.0` 초 초과 시 모인 장수로 강제 종합 판정 후 버퍼 제거.
 
 ---
 
