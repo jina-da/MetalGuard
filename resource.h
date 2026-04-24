@@ -62,7 +62,8 @@
 #define IDC_STATUS_GATE_B               1063   // 게이트 B 상태
 #define IDC_MODE_COMBO                  1064   // 운영 모드 콤보박스
 #define IDC_DEFECT_CLASS                1065   // 불량 클래스 표시
-#define IDC_DB_LIST                     1066   // DB 기록 리스트컨트롤
+#define IDC_DB_LIST                     1066
+#define IDC_ONE_CLICK_START             1080   // 원클릭 시작 버튼   // DB 기록 리스트컨트롤
 #define IDC_VERDICT_GROUP               1067   // 판정 결과 그룹박스
 #define IDC_STATUS_GROUP                1068   // 시스템 상태 그룹박스
 #define IDC_PROB_GROUP                  1069   // 확률값 그룹박스

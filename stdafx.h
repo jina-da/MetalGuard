@@ -1,7 +1,3 @@
-// stdafx.h : 자주 사용하지만 자주 변경되지는 않는
-// 표준 시스템 포함 파일 및 프로젝트 관련 포함 파일이 
-// 들어 있는 포함 파일입니다.
-
 #pragma once
 
 #ifndef _SECURE_ATL
@@ -9,49 +5,42 @@
 #endif
 
 #ifndef VC_EXTRALEAN
-#define VC_EXTRALEAN            // 거의 사용되지 않는 내용은 Windows 헤더에서 제외합니다.
+#define VC_EXTRALEAN
 #endif
 
 #include "targetver.h"
 
-#define _ATL_CSTRING_EXPLICIT_CONSTRUCTORS      // 일부 CString 생성자는 명시적으로 선언됩니다.
+// ── 반드시 이 순서대로 ──────────────────────────────────────
+// 1. Winsock2를 가장 먼저 (winsock.h 충돌 방지)
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
-// MFC의 공통 부분과 무시 가능한 경고 메시지에 대한 숨기기를 해제합니다.
+// 2. Pylon (MFC보다 먼저)
+#include <pylon/PylonIncludes.h>
+#include <pylon/PylonGUI.h>
+
+
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+
+// 3. MFC (Pylon 다음)
+#define _ATL_CSTRING_EXPLICIT_CONSTRUCTORS
 #define _AFX_ALL_WARNINGS
-
-#include <afxwin.h>         // MFC 핵심 및 표준 구성 요소입니다.
-#include <afxext.h>         // MFC 확장입니다.
-
-
-#include <afxdisp.h>        // MFC 자동화 클래스입니다.
-
-
+#include <afxwin.h>
+#include <afxext.h>
+#include <afxdisp.h>
+// ────────────────────────────────────────────────────────────
 
 #ifndef _AFX_NO_OLE_SUPPORT
-#include <afxdtctl.h>           // Internet Explorer 4 공용 컨트롤에 대한 MFC 지원입니다.
+#include <afxdtctl.h>
 #endif
 #ifndef _AFX_NO_AFXCMN_SUPPORT
-#include <afxcmn.h>                     // Windows 공용 컨트롤에 대한 MFC 지원입니다.
-#endif // _AFX_NO_AFXCMN_SUPPORT
-
-
-
-
-
-
-
-
+#include <afxcmn.h>
+#endif
 
 #ifdef _UNICODE
-#if defined _M_IX86
-#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='x86' publicKeyToken='6595b64144ccf1df' language='*'\"")
-#elif defined _M_IA64
-#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='ia64' publicKeyToken='6595b64144ccf1df' language='*'\"")
-#elif defined _M_X64
+#if defined _M_X64
 #pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='amd64' publicKeyToken='6595b64144ccf1df' language='*'\"")
-#else
-#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #endif
 #endif
-
-

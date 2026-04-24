@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "PylonSampleProgram.h"
 #include "PylonSampleProgramDlg.h"
+#include "MetalGuardTypes.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW

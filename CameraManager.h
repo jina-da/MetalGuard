@@ -1,16 +1,16 @@
 #pragma once
 
-#include <pylon/PylonIncludes.h>
-#include <pylon/PylonGUI.h>
 #include <pylon/gige/BaslerGigECamera.h>
 #include <pylon/gige/GigETransportLayer.h>
 #include <pylon/gige/BaslerGigEDeviceInfo.h>
-#include <opencv2/opencv.hpp>
+
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+
 #include <json.hpp> 
 
 // 통신 관련 헤더 및 라이브러리
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #include <vector>
 #include <string>
 #include <stdint.h>
@@ -106,6 +106,8 @@ public:
     bool    m_bObjectDetected[CAM_NUM];   // 물체 감지 상태 플래그
     cv::Mat m_matPrevFrame[CAM_NUM];      // 이전 프레임 저장 (차이 비교용)
     int     m_nTriggeredShotCount[CAM_NUM]; // 감지 후 현재까지 찍은 횟수
+    int     m_nConsecutiveDetect[CAM_NUM];  // 연속 감지 프레임 카운터 (오감지 방지)
+    DWORD   m_dwLightChangeTime[CAM_NUM];   // 조명 변화 감지 시각
 
     // 물체 감지 함수 (내부 사용)
     bool DetectObject(int nCamIndex, cv::Mat& currentFrame);

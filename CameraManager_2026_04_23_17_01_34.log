@@ -1,7 +1,0 @@
-[17:01:41] [[ SetInteger ]
-] Value = 0 must be equal or greater than Min = 32.
-[17:01:41] [[ SetInteger ]
-] Value = 0 must be equal or greater than Min = 1.
-[17:01:42] [정상] 8장 촬영 및 전송 완료
-[17:01:45] [알림] 새로운 물체 감지 - 8장 촬영 시작
-[17:01:47] [정상] 8장 촬영 및 전송 완료

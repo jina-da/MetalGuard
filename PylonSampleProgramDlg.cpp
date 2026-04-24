@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "PylonSampleProgram.h"
 #include "PylonSampleProgramDlg.h"
+#include "MetalGuardTypes.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -8,7 +9,8 @@
 
 HWND g_hMainWnd = NULL;
 
-CPylonSampleProgramDlg *pMainDlg;
+CPylonSampleProgramDlg* pMainDlg;
+
 UINT LiveGrabThreadCam0(LPVOID pParam)
 {
 	int nCamIndex = *(int*)pParam;
@@ -29,7 +31,6 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 				pWnd->GetClientRect(&rect);
 				CDC* pDC = pWnd->GetDC();
 
-				// --- 더블 버퍼링 (깜빡임 방지) ---
 				CDC memDC;
 				CBitmap memBitmap;
 				memDC.CreateCompatibleDC(pDC);
@@ -70,19 +71,6 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 
 				pDC->BitBlt(0, 0, rect.Width(), rect.Height(), &memDC, 0, 0, SRCCOPY);
 
-				// --- 자동 재분류 로직 ---
-				bool bTriggerReclassify = false;
-				if (bTriggerReclassify && pMainDlg->m_CameraManager.m_bIsServerConnected)
-				{
-					AsyncSendParam* pData = new AsyncSendParam;
-					pData->pMgr = &pMainDlg->m_CameraManager;
-					pData->matImage = matRaw.clone();
-					pData->nPlateId = pMainDlg->m_nPlateId;
-					pData->nShotIdx = 1;
-					pData->cmd = CmdID::IMG_RECLASSIFY;
-					AfxBeginThread(CCameraManager::ThreadAsyncSend, pData);
-				}
-
 				memDC.SelectObject(pOldBitmap);
 				memBitmap.DeleteObject();
 				memDC.DeleteDC();
@@ -95,7 +83,6 @@ UINT LiveGrabThreadCam0(LPVOID pParam)
 	return 0;
 }
 
-// CAboutDlg 대화 상자
 class CAboutDlg : public CDialog
 {
 public:
@@ -107,35 +94,27 @@ protected:
 };
 
 CAboutDlg::CAboutDlg() : CDialog(CAboutDlg::IDD) {}
-
-void CAboutDlg::DoDataExchange(CDataExchange* pDX)
-{
-	CDialog::DoDataExchange(pDX);
-}
-
+void CAboutDlg::DoDataExchange(CDataExchange* pDX) { CDialog::DoDataExchange(pDX); }
 BEGIN_MESSAGE_MAP(CAboutDlg, CDialog)
-	ON_NOTIFY(NM_CLICK, IDC_CAMERA_LIST, &CPylonSampleProgramDlg::OnNMClickListCam)
 END_MESSAGE_MAP()
 
-
-// CPylonSampleProgramDlg 대화 상자
-
-CPylonSampleProgramDlg::CPylonSampleProgramDlg(CWnd* pParent /*=NULL*/)
+CPylonSampleProgramDlg::CPylonSampleProgramDlg(CWnd* pParent)
 	: CDialog(CPylonSampleProgramDlg::IDD, pParent)
 {
 	m_nDBRowCount = 0;
-	for(int i=0; i<CAM_NUM; i++)
+	m_strCurrentVerdict = _T("WAIT");
+	for (int i = 0; i < CAM_NUM; i++)
 	{
-	   pImageresizeOrgBuffer[i] = NULL;
-	   pImageColorDestBuffer[i] = NULL;
-	   bitmapinfo[i] = NULL;
-	   bStopThread[i] = false;
-       nFrameCount[i] = 0;
-	   time[i] = 0;
-	   m_CameraManager.m_iCM_Width[i] = 1;
-	   m_CameraManager.m_iCM_Height[i] = 1;
-	   QueryPerformanceFrequency(&freq[i]);
-	   m_nCamIndexBuf[i] = i;
+		pImageresizeOrgBuffer[i] = NULL;
+		pImageColorDestBuffer[i] = NULL;
+		bitmapinfo[i] = NULL;
+		bStopThread[i] = false;
+		nFrameCount[i] = 0;
+		time[i] = 0;
+		m_CameraManager.m_iCM_Width[i] = 1;
+		m_CameraManager.m_iCM_Height[i] = 1;
+		QueryPerformanceFrequency(&freq[i]);
+		m_nCamIndexBuf[i] = i;
 	}
 	m_iCameraIndex = -1;
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
@@ -146,44 +125,43 @@ void CPylonSampleProgramDlg::DoDataExchange(CDataExchange* pDX)
 	CDialog::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_CAMERA_LIST, m_ctrlCamList);
 	DDX_Control(pDX, IDC_LIST_LOG,    m_listLog);
-	DDX_Control(pDX, IDC_DB_LIST,     m_listDB);    // ← 신규
+	DDX_Control(pDX, IDC_DB_LIST,     m_listDB);
 }
 
 BEGIN_MESSAGE_MAP(CPylonSampleProgramDlg, CDialog)
 	ON_WM_SYSCOMMAND()
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
-	ON_BN_CLICKED(IDC_FIND_CAM_BTN,       &CPylonSampleProgramDlg::OnBnClickedFindCamBtn)
-	ON_NOTIFY(NM_CLICK, IDC_CAMERA_LIST,  &CPylonSampleProgramDlg::OnNMClickCameraList)
-	ON_BN_CLICKED(IDC_OPEN_CAMERA_BTN,    &CPylonSampleProgramDlg::OnBnClickedOpenCameraBtn)
-	ON_BN_CLICKED(IDC_CONNECT_CAMERA_BTN, &CPylonSampleProgramDlg::OnBnClickedConnectCameraBtn)
-	ON_BN_CLICKED(IDC_GRAB_SINGLE_BTN,    &CPylonSampleProgramDlg::OnBnClickedGrabSingleBtn)
-	ON_BN_CLICKED(IDC_CAM0_LIVE,          &CPylonSampleProgramDlg::OnBnClickedCam0Live)
-	ON_BN_CLICKED(IDC_CLOSE_CAM_BTN,      &CPylonSampleProgramDlg::OnBnClickedCloseCamBtn)
-	ON_BN_CLICKED(IDC_RECLASSIFY_BTN,     &CPylonSampleProgramDlg::OnBnClickedReclassifyBtn)
-	ON_BN_CLICKED(IDC_SOFT_TRIG_BTN,      &CPylonSampleProgramDlg::OnBnClickedSoftTrigBtn)
-	ON_BN_CLICKED(IDC_EXIT_BTN,           &CPylonSampleProgramDlg::OnBnClickedExitBtn)
-	ON_BN_CLICKED(IDC_CAM1_LIVE,          &CPylonSampleProgramDlg::OnBnClickedCam1Live)
-	ON_BN_CLICKED(IDC_SAVE_IMG_BTN,       &CPylonSampleProgramDlg::OnBnClickedSaveImgBtn)
-	ON_BN_CLICKED(IDC_BUTTON5,            &CPylonSampleProgramDlg::OnBnClickedButton5)
-	ON_BN_CLICKED(IDC_TWO_CAMERA_LIVE_BTN,&CPylonSampleProgramDlg::OnBnClickedTwoCameraLiveBtn)
-	ON_BN_CLICKED(IDC_CAM2_LIVE,          &CPylonSampleProgramDlg::OnBnClickedCam2Live)
-	ON_BN_CLICKED(IDC_CAM3_LIVE,          &CPylonSampleProgramDlg::OnBnClickedCam3Live)
+	ON_BN_CLICKED(IDC_FIND_CAM_BTN,        &CPylonSampleProgramDlg::OnBnClickedFindCamBtn)
+	ON_NOTIFY(NM_CLICK, IDC_CAMERA_LIST,   &CPylonSampleProgramDlg::OnNMClickCameraList)
+	ON_BN_CLICKED(IDC_OPEN_CAMERA_BTN,     &CPylonSampleProgramDlg::OnBnClickedOpenCameraBtn)
+	ON_BN_CLICKED(IDC_CONNECT_CAMERA_BTN,  &CPylonSampleProgramDlg::OnBnClickedConnectCameraBtn)
+	ON_BN_CLICKED(IDC_GRAB_SINGLE_BTN,     &CPylonSampleProgramDlg::OnBnClickedGrabSingleBtn)
+	ON_BN_CLICKED(IDC_CAM0_LIVE,           &CPylonSampleProgramDlg::OnBnClickedCam0Live)
+	ON_BN_CLICKED(IDC_CLOSE_CAM_BTN,       &CPylonSampleProgramDlg::OnBnClickedCloseCamBtn)
+	ON_BN_CLICKED(IDC_RECLASSIFY_BTN,      &CPylonSampleProgramDlg::OnBnClickedReclassifyBtn)
+	ON_BN_CLICKED(IDC_SOFT_TRIG_BTN,       &CPylonSampleProgramDlg::OnBnClickedSoftTrigBtn)
+	ON_BN_CLICKED(IDC_EXIT_BTN,            &CPylonSampleProgramDlg::OnBnClickedExitBtn)
+	ON_BN_CLICKED(IDC_CAM1_LIVE,           &CPylonSampleProgramDlg::OnBnClickedCam1Live)
+	ON_BN_CLICKED(IDC_SAVE_IMG_BTN,        &CPylonSampleProgramDlg::OnBnClickedSaveImgBtn)
+	ON_BN_CLICKED(IDC_BUTTON5,             &CPylonSampleProgramDlg::OnBnClickedButton5)
+	ON_BN_CLICKED(IDC_TWO_CAMERA_LIVE_BTN, &CPylonSampleProgramDlg::OnBnClickedTwoCameraLiveBtn)
+	ON_BN_CLICKED(IDC_CAM2_LIVE,           &CPylonSampleProgramDlg::OnBnClickedCam2Live)
+	ON_BN_CLICKED(IDC_CAM3_LIVE,           &CPylonSampleProgramDlg::OnBnClickedCam3Live)
+	// ─── 원클릭 시작 버튼 (신규) ──────────────────────────────
+	ON_BN_CLICKED(IDC_ONE_CLICK_START,     &CPylonSampleProgramDlg::OnBnClickedOneClickStart)
 	ON_MESSAGE(WM_UPDATE_LOG,     &CPylonSampleProgramDlg::OnUpdateLog)
-	ON_MESSAGE(WM_UPDATE_VERDICT, &CPylonSampleProgramDlg::OnUpdateVerdict)  // ← 신규
-	ON_CBN_SELCHANGE(IDC_MODE_COMBO, &CPylonSampleProgramDlg::OnCbnSelchangeModeCombo) // ← 신규
+	ON_MESSAGE(WM_UPDATE_VERDICT, &CPylonSampleProgramDlg::OnUpdateVerdict)
+	ON_CBN_SELCHANGE(IDC_MODE_COMBO, &CPylonSampleProgramDlg::OnCbnSelchangeModeCombo)
+	ON_WM_CTLCOLOR()
+	ON_NOTIFY(NM_CUSTOMDRAW, IDC_DB_LIST, &CPylonSampleProgramDlg::OnNMCustomdrawDbList)
 END_MESSAGE_MAP()
-
-
-// CPylonSampleProgramDlg 메시지 처리기
 
 BOOL CPylonSampleProgramDlg::OnInitDialog()
 {
 	CDialog::OnInitDialog();
-
 	g_hMainWnd = m_hWnd;
 
-	// 시스템 메뉴 및 아이콘 설정
 	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
 	ASSERT(IDM_ABOUTBOX < 0xF000);
 	CMenu* pSysMenu = GetSystemMenu(FALSE);
@@ -199,589 +177,337 @@ BOOL CPylonSampleProgramDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);
 	SetIcon(m_hIcon, FALSE);
 
-	// --- 1. 카메라 리스트 컨트롤 초기화 ---
-	m_ctrlCamList.InsertColumn(0, _T("모델명"),    LVCFMT_CENTER, 130, -1);
-	m_ctrlCamList.InsertColumn(1, _T("Position"), LVCFMT_CENTER, 80,  -1);
-	m_ctrlCamList.InsertColumn(2, _T("SerialNum"),LVCFMT_CENTER, 90,  -1);
-	m_ctrlCamList.InsertColumn(3, _T("Stats"),    LVCFMT_CENTER, 150, -1);
-	m_ctrlCamList.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES |
-	                               LVS_EX_ONECLICKACTIVATE | LVS_EX_HEADERDRAGDROP);
+	// --- 카메라 리스트 컬럼 초기화 ---
+	m_ctrlCamList.InsertColumn(0, _T("모델명"),    LVCFMT_CENTER, 130);
+	m_ctrlCamList.InsertColumn(1, _T("위치"),      LVCFMT_CENTER, 70);
+	m_ctrlCamList.InsertColumn(2, _T("시리얼"),    LVCFMT_CENTER, 90);
+	m_ctrlCamList.InsertColumn(3, _T("상태"),      LVCFMT_CENTER, 100);
+	m_ctrlCamList.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
-	// --- 2. DB 기록 리스트 컨트롤 초기화 (신규) ---
-	m_listDB.InsertColumn(0,  _T("ID"),           LVCFMT_CENTER, 40);
-	m_listDB.InsertColumn(1,  _T("타임스탬프"),    LVCFMT_CENTER, 118);
-	m_listDB.InsertColumn(2,  _T("plate_id"),      LVCFMT_CENTER, 55);
-	m_listDB.InsertColumn(3,  _T("최종 판정"),     LVCFMT_CENTER, 65);
-	m_listDB.InsertColumn(4,  _T("Normal%"),       LVCFMT_CENTER, 55);
-	m_listDB.InsertColumn(5,  _T("Crack%"),        LVCFMT_CENTER, 50);
-	m_listDB.InsertColumn(6,  _T("Hole%"),         LVCFMT_CENTER, 50);
-	m_listDB.InsertColumn(7,  _T("Rust%"),         LVCFMT_CENTER, 50);
-	m_listDB.InsertColumn(8,  _T("Scratch%"),      LVCFMT_CENTER, 55);
-	m_listDB.InsertColumn(9,  _T("추론(ms)"),      LVCFMT_CENTER, 55);
-	m_listDB.InsertColumn(10, _T("파이프라인(ms)"),LVCFMT_CENTER, 72);
+	// --- DB 기록 테이블 컬럼 초기화 (모드 컬럼 추가) ---
+	m_listDB.InsertColumn(0,  _T("ID"),            LVCFMT_CENTER, 38);
+	m_listDB.InsertColumn(1,  _T("시각"),           LVCFMT_CENTER, 112);
+	m_listDB.InsertColumn(2,  _T("plate"),          LVCFMT_CENTER, 42);
+	m_listDB.InsertColumn(3,  _T("모드"),           LVCFMT_CENTER, 65);
+	m_listDB.InsertColumn(4,  _T("판정"),           LVCFMT_CENTER, 60);
+	m_listDB.InsertColumn(5,  _T("Normal%"),        LVCFMT_CENTER, 52);
+	m_listDB.InsertColumn(6,  _T("Crack%"),         LVCFMT_CENTER, 48);
+	m_listDB.InsertColumn(7,  _T("Hole%"),          LVCFMT_CENTER, 48);
+	m_listDB.InsertColumn(8,  _T("Rust%"),          LVCFMT_CENTER, 48);
+	m_listDB.InsertColumn(9,  _T("Scratch%"),       LVCFMT_CENTER, 52);
+	m_listDB.InsertColumn(10, _T("추론(ms)"),       LVCFMT_CENTER, 55);
+	m_listDB.InsertColumn(11, _T("파이프라인(ms)"), LVCFMT_CENTER, 72);
 	m_listDB.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
-	// --- 3. 운영 모드 콤보박스 초기화 (신규) ---
+	// --- 운영 모드 콤보박스 초기화 ---
 	CComboBox* pCombo = (CComboBox*)GetDlgItem(IDC_MODE_COMBO);
-	if (pCombo)
-	{
+	if (pCombo) {
 		pCombo->AddString(_T("실시간 검출"));
 		pCombo->AddString(_T("UNCERTAIN 재분류"));
 		pCombo->SetCurSel(0);
 	}
 
-	// --- 4. 이미지 버퍼 메모리 할당 ---
+	// --- 이미지 버퍼 할당 ---
 	for (int i = 0; i < CAM_NUM; i++)
 	{
 		pImageColorDestBuffer[i] = new unsigned char* [BUF_NUM];
 		for (int j = 0; j < BUF_NUM; j++)
 		{
-			size_t nFrameSize = 260 * 260 * 3;
-			pImageColorDestBuffer[i][j] = new unsigned char[nFrameSize];
-			memset(pImageColorDestBuffer[i][j], 0, nFrameSize);
+			pImageColorDestBuffer[i][j] = new unsigned char[260 * 260 * 3];
+			memset(pImageColorDestBuffer[i][j], 0, 260 * 260 * 3);
 		}
 	}
 
-	// --- 5. 화면 출력용 HDC 및 영역 초기화 ---
-	UINT nStaticIDs[] = { IDC_CAM0_DISPLAY, IDC_CAM1_DISPLAY, IDC_CAM2_DISPLAY, IDC_CAM3_DISPLAY };
-	for (int i = 0; i < CAM_NUM; i++)
-	{
-		CWnd* pWnd = GetDlgItem(nStaticIDs[i]);
-		if (pWnd)
-		{
-			pWnd->GetClientRect(&rectStaticClient[i]);
-			hdc[i] = pWnd->GetDC()->GetSafeHdc();
-		}
-		if (bitmapinfo[i] == NULL)
-		{
-			bitmapinfo[i] = (BITMAPINFO*)new BYTE[sizeof(BITMAPINFO)];
-			memset(bitmapinfo[i], 0, sizeof(BITMAPINFO));
-			bitmapinfo[i]->bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-			bitmapinfo[i]->bmiHeader.biWidth        = 260;
-			bitmapinfo[i]->bmiHeader.biHeight       = -260;
-			bitmapinfo[i]->bmiHeader.biPlanes        = 1;
-			bitmapinfo[i]->bmiHeader.biBitCount      = 24;
-			bitmapinfo[i]->bmiHeader.biCompression   = BI_RGB;
-		}
+	// --- HDC 초기화 ---
+	CWnd* pWnd = GetDlgItem(IDC_CAM0_DISPLAY);
+	if (pWnd) {
+		pWnd->GetClientRect(&rectStaticClient[0]);
+		hdc[0] = pWnd->GetDC()->GetSafeHdc();
+	}
+	if (bitmapinfo[0] == NULL) {
+		bitmapinfo[0] = (BITMAPINFO*)new BYTE[sizeof(BITMAPINFO)];
+		memset(bitmapinfo[0], 0, sizeof(BITMAPINFO));
+		bitmapinfo[0]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+		bitmapinfo[0]->bmiHeader.biWidth = 260;
+		bitmapinfo[0]->bmiHeader.biHeight = -260;
+		bitmapinfo[0]->bmiHeader.biPlanes = 1;
+		bitmapinfo[0]->bmiHeader.biBitCount = 24;
+		bitmapinfo[0]->bmiHeader.biCompression = BI_RGB;
 	}
 
 	pMainDlg = this;
 
+	// --- 판정 색상 브러시 초기화 ---
+	m_brushPass.CreateSolidBrush(RGB(198, 239, 206));      // 연초록 (PASS)
+	m_brushFail.CreateSolidBrush(RGB(255, 199, 206));      // 연빨강 (FAIL)
+	m_brushUncertain.CreateSolidBrush(RGB(255, 235, 156)); // 연노랑 (UNCERTAIN)
+	m_brushNormal.CreateSolidBrush(RGB(255, 255, 255));    // 흰색 (기본)
+
+	// --- 시작 안내 로그 ---
+	WriteLog(_T("[시스템] MetalGuard 초기화 완료. '원클릭 시작' 버튼을 눌러 검출을 시작하세요."));
 	return TRUE;
+}
+
+// ── 원클릭 시작 (카메라 찾기 + 열기 + 연결 + 라이브 한번에) ──
+void CPylonSampleProgramDlg::OnBnClickedOneClickStart()
+{
+	WriteLog(_T("[시스템] 원클릭 시작 - 카메라 초기화 중..."));
+
+	// 1. 카메라 탐색
+	GetSerialNumerFromFile();
+	m_error = m_CameraManager.FindCamera(m_szCamName, m_szSerialNum, m_szInterface, &m_iCamNumber);
+	if (m_error != 0 || m_iCamNumber == 0) {
+		WriteLog(_T("[오류] 연결된 카메라를 찾지 못했습니다. 카메라 연결을 확인하세요."));
+		AfxMessageBox(_T("카메라를 찾지 못했습니다.\n카메라 연결 상태를 확인하세요."));
+		return;
+	}
+
+	// 2. 리스트 갱신
+	m_ctrlCamList.DeleteAllItems();
+	for (int i = 0; i < m_iCamNumber; i++) {
+		CString name(m_szCamName[i]);
+		CString serial(m_szSerialNum[i]);
+		m_ctrlCamList.InsertItem(i, name);
+		m_ctrlCamList.SetItemText(i, 1, _T("Inspect0"));
+		m_ctrlCamList.SetItemText(i, 2, serial);
+		m_ctrlCamList.SetItemText(i, 3, _T("발견됨"));
+	}
+	m_iCameraIndex = 0;
+	m_iListIndex   = 0;
+
+	// 3. 카메라 열기
+	int nOpen = m_CameraManager.Open_Camera(0, m_iCamPosition[0]);
+	if (nOpen != 0) {
+		WriteLog(_T("[오류] 카메라 열기 실패."));
+		return;
+	}
+	m_ctrlCamList.SetItemText(0, 3, _T("열림"));
+
+	// 4. 카메라 연결
+	int nConn = m_CameraManager.Connect_Camera(0, 0, 0, 0, 0, _T("Mono8"));
+	if (nConn != 0) {
+		WriteLog(_T("[오류] 카메라 연결 실패."));
+		return;
+	}
+	m_ctrlCamList.SetItemText(0, 3, _T("연결됨"));
+
+	// 5. 서버 연결
+	if (m_CameraManager.ConnectToServer("10.10.10.109", 8000)) {
+		SetDlgItemText(IDC_STATUS_SERVER, _T("연결됨 (10.10.10.109:8000)"));
+		WriteLog(_T("[시스템] 운용 서버 연결 성공."));
+	} else {
+		SetDlgItemText(IDC_STATUS_SERVER, _T("서버 연결 실패"));
+		WriteLog(_T("[경고] 서버 연결 실패. 카메라 단독 동작합니다."));
+	}
+
+	// 6. 버퍼 할당 + 라이브 시작
+	AllocImageBuf();
+	InitBitmap(0);
+	bStopThread[0] = true;
+	bLiveFlag[0]   = true;
+	m_CameraManager.GrabLive(0, 0);
+	m_nCamIndexBuf[0] = 0;
+	AfxBeginThread(LiveGrabThreadCam0, &m_nCamIndexBuf[0]);
+
+	SetDlgItemText(IDC_CAM0_LIVE, _T("라이브 정지"));
+	WriteLog(_T("[시스템] 라이브 스트리밍 시작. 철판이 카메라 앞을 지나가면 자동 촬영됩니다."));
 }
 
 void CPylonSampleProgramDlg::OnSysCommand(UINT nID, LPARAM lParam)
 {
-	if ((nID & 0xFFF0) == IDM_ABOUTBOX)
-	{
-		CAboutDlg dlgAbout;
-		dlgAbout.DoModal();
-	}
-	else
-	{
-		CDialog::OnSysCommand(nID, lParam);
-	}
+	if ((nID & 0xFFF0) == IDM_ABOUTBOX) { CAboutDlg d; d.DoModal(); }
+	else CDialog::OnSysCommand(nID, lParam);
 }
 
 void CPylonSampleProgramDlg::OnPaint()
 {
-	if (IsIconic())
-	{
+	if (IsIconic()) {
 		CPaintDC dc(this);
-		SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
-		int cxIcon = GetSystemMetrics(SM_CXICON);
-		int cyIcon = GetSystemMetrics(SM_CYICON);
-		CRect rect;
-		GetClientRect(&rect);
-		int x = (rect.Width()  - cxIcon + 1) / 2;
-		int y = (rect.Height() - cyIcon + 1) / 2;
+		SendMessage(WM_ICONERASEBKGND, (WPARAM)dc.GetSafeHdc(), 0);
+		int x = (GetSystemMetrics(SM_CXICON) + 1) / 2;
+		int y = (GetSystemMetrics(SM_CYICON) + 1) / 2;
 		dc.DrawIcon(x, y, m_hIcon);
-	}
-	else
-	{
+	} else {
 		CPaintDC dc(this);
 		CDialog::OnPaint();
-
-		if (!m_CameraManager.m_matLiveImage[0].empty())
-		{
-			CWnd* pWnd = GetDlgItem(IDC_CAM0_DISPLAY);
-			if (pWnd)
-			{
-				CRect rect;
-				pWnd->GetClientRect(&rect);
-				CDC* pDC = pWnd->GetDC();
-
-				cv::Mat matResized;
-				cv::resize(m_CameraManager.m_matLiveImage[0], matResized,
-				           cv::Size(rect.Width(), rect.Height()));
-
-				BITMAPINFO bitInfo;
-				bitInfo.bmiHeader.biBitCount      = 24;
-				bitInfo.bmiHeader.biWidth          = matResized.cols;
-				bitInfo.bmiHeader.biHeight         = -matResized.rows;
-				bitInfo.bmiHeader.biPlanes          = 1;
-				bitInfo.bmiHeader.biSize            = sizeof(BITMAPINFOHEADER);
-				bitInfo.bmiHeader.biCompression     = BI_RGB;
-				bitInfo.bmiHeader.biClrImportant    = 0;
-				bitInfo.bmiHeader.biClrUsed         = 0;
-				bitInfo.bmiHeader.biSizeImage       = 0;
-				bitInfo.bmiHeader.biXPelsPerMeter   = 0;
-				bitInfo.bmiHeader.biYPelsPerMeter   = 0;
-
-				::SetDIBitsToDevice(pDC->GetSafeHdc(), 0, 0,
-				    matResized.cols, matResized.rows,
-				    0, 0, 0, matResized.rows,
-				    matResized.data, &bitInfo, DIB_RGB_COLORS);
-				ReleaseDC(pDC);
-			}
-		}
 	}
 }
 
-HCURSOR CPylonSampleProgramDlg::OnQueryDragIcon()
-{
-	return static_cast<HCURSOR>(m_hIcon);
-}
-
+HCURSOR CPylonSampleProgramDlg::OnQueryDragIcon() { return (HCURSOR)m_hIcon; }
 
 void CPylonSampleProgramDlg::OnBnClickedFindCamBtn()
 {
 	GetSerialNumerFromFile();
 	m_error = m_CameraManager.FindCamera(m_szCamName, m_szSerialNum, m_szInterface, &m_iCamNumber);
-
 	if (m_error == 0)
 	{
 		m_ctrlCamList.DeleteAllItems();
-		int nCount = 0;
-		CString strSerialNum;
-
 		for (int i = 0; i < m_iCamNumber; i++)
 		{
-			nCount++;
-			CString strcamname  = (CString)m_szCamName[i];
-			strSerialNum = (CString)m_szSerialNum[i];
-
-			CString strCheck;
-			strCheck.Format(_T("인식된 카메라 [%d]\n이름: %s\n시리얼: %s\n\n설정파일 시리얼0: %s\n설정파일 시리얼1: %s"),
-				i, strcamname, strSerialNum, m_strCamSerial[0], m_strCamSerial[1]);
-			AfxMessageBox(strCheck);
-
-			bool bFound = false;
-			if (strSerialNum == m_strCamSerial[0])
-			{
-				m_iCamPosition[0] = nCount;
-				m_ctrlCamList.InsertItem(i, strcamname);
-				m_ctrlCamList.SetItemText(i, 1, _T("Inspect0"));
-				m_ctrlCamList.SetItemText(i, 2, strSerialNum);
-				m_ctrlCamList.SetItemText(i, 3, _T("Find_Success"));
-				bFound = true;
-			}
-			else if (strSerialNum == m_strCamSerial[1])
-			{
-				m_iCamPosition[1] = nCount;
-				m_ctrlCamList.InsertItem(i, strcamname);
-				m_ctrlCamList.SetItemText(i, 1, _T("Inspect1"));
-				m_ctrlCamList.SetItemText(i, 2, strSerialNum);
-				m_ctrlCamList.SetItemText(i, 3, _T("Find_Success"));
-				bFound = true;
-			}
-			else if (strSerialNum == m_strCamSerial[2])
-			{
-				m_iCamPosition[2] = nCount;
-				m_ctrlCamList.InsertItem(i, strcamname);
-				m_ctrlCamList.SetItemText(i, 1, _T("Inspect2"));
-				m_ctrlCamList.SetItemText(i, 2, strSerialNum);
-				m_ctrlCamList.SetItemText(i, 3, _T("Find_Success"));
-				bFound = true;
-			}
-			else if (strSerialNum == m_strCamSerial[3])
-			{
-				m_iCamPosition[3] = nCount;
-				m_ctrlCamList.InsertItem(i, strcamname);
-				m_ctrlCamList.SetItemText(i, 1, _T("Inspect3"));
-				m_ctrlCamList.SetItemText(i, 2, strSerialNum);
-				m_ctrlCamList.SetItemText(i, 3, _T("Find_Success"));
-				bFound = true;
-			}
-			if (!bFound)
-			{
-				m_ctrlCamList.InsertItem(i, strcamname);
-				m_ctrlCamList.SetItemText(i, 1, _T("Unknown"));
-				m_ctrlCamList.SetItemText(i, 2, strSerialNum);
-				m_ctrlCamList.SetItemText(i, 3, _T("Serial_Mismatch"));
-			}
+			CString name(m_szCamName[i]);
+			CString serial(m_szSerialNum[i]);
+			m_ctrlCamList.InsertItem(i, name);
+			m_ctrlCamList.SetItemText(i, 1, _T("Inspect0"));
+			m_ctrlCamList.SetItemText(i, 2, serial);
+			m_ctrlCamList.SetItemText(i, 3, _T("발견됨"));
 		}
+		WriteLog(_T("[시스템] 카메라 탐색 완료."));
 	}
-	else if (m_error == -1)
-	{
-		AfxMessageBox(_T("연결된 카메라가 없습니다."));
-	}
-	else if (m_error == -2)
-	{
-		AfxMessageBox(_T("Pylon Function Error (Library Link?)"));
-	}
+	else if (m_error == -1) { AfxMessageBox(_T("연결된 카메라가 없습니다.")); }
+	else { AfxMessageBox(_T("Pylon 라이브러리 오류")); }
 }
 
 void CPylonSampleProgramDlg::GetSerialNumerFromFile(void)
 {
-    TCHAR buff[100];
+	TCHAR buff[100];
 	CString strTemp;
-	DWORD length;
-
-	for(int i=0; i<CAM_NUM; i++){
-		strTemp.Format(_T("CAM%d"), i+1);
-		memset(buff, 0x00, sizeof(buff));
-		length = GetPrivateProfileString(strTemp, _T("Serial"), _T(""), buff, sizeof(buff), _T(".\\CameraInfo.txt"));
-		m_strCamSerial[i] = (CString)buff;
+	for (int i = 0; i < CAM_NUM; i++) {
+		strTemp.Format(_T("CAM%d"), i + 1);
+		memset(buff, 0, sizeof(buff));
+		GetPrivateProfileString(strTemp, _T("Serial"), _T(""), buff, sizeof(buff), _T(".\\CameraInfo.txt"));
+		m_strCamSerial[i] = buff;
 	}
 }
 
-void CPylonSampleProgramDlg::OnNMClickCameraList(NMHDR *pNMHDR, LRESULT *pResult)
+void CPylonSampleProgramDlg::OnNMClickCameraList(NMHDR* pNMHDR, LRESULT* pResult)
 {
-	NM_LISTVIEW* pNMListView = (NM_LISTVIEW*)pNMHDR;
-    m_iListIndex = pNMListView->iItem;
+	NM_LISTVIEW* p = (NM_LISTVIEW*)pNMHDR;
+	m_iListIndex = p->iItem;
 	SetDlgItemText(IDC_SELECT_CAMERA, m_ctrlCamList.GetItemText(m_iListIndex, 1));
-	if      (m_ctrlCamList.GetItemText(pNMListView->iItem, 1) == _T("Inspect0")) m_iCameraIndex = 0;
-	else if (m_ctrlCamList.GetItemText(pNMListView->iItem, 1) == _T("Inspect1")) m_iCameraIndex = 1;
-	else if (m_ctrlCamList.GetItemText(pNMListView->iItem, 1) == _T("Inspect2")) m_iCameraIndex = 2;
-	else if (m_ctrlCamList.GetItemText(pNMListView->iItem, 1) == _T("Inspect3")) m_iCameraIndex = 3;
+	if      (m_ctrlCamList.GetItemText(p->iItem, 1) == _T("Inspect0")) m_iCameraIndex = 0;
+	else if (m_ctrlCamList.GetItemText(p->iItem, 1) == _T("Inspect1")) m_iCameraIndex = 1;
+	else if (m_ctrlCamList.GetItemText(p->iItem, 1) == _T("Inspect2")) m_iCameraIndex = 2;
+	else if (m_ctrlCamList.GetItemText(p->iItem, 1) == _T("Inspect3")) m_iCameraIndex = 3;
 	*pResult = 0;
 }
 
 void CPylonSampleProgramDlg::OnBnClickedOpenCameraBtn()
 {
-	if (m_iCameraIndex == -1 && m_iCamNumber > 0)
-	{
-		m_iCameraIndex = 0;
-		m_iListIndex   = 0;
-	}
-	if(m_iCameraIndex != -1)
-	{
-		int error = m_CameraManager.Open_Camera(m_iCameraIndex, m_iCamPosition[m_iCameraIndex]);
-		if      (error == 0)  m_ctrlCamList.SetItemText(m_iListIndex, 3, _T("Open_Success"));
-		else if (error == -1) m_ctrlCamList.SetItemText(m_iListIndex, 3, _T("Alread_Open"));
-		else                  m_ctrlCamList.SetItemText(m_iListIndex, 3, _T("Open_Fail"));
-	}
-	else
-	{
-		AfxMessageBox(_T("리스트에서 카메라를 먼저 선택하세요!!"));
-	}
+	if (m_iCameraIndex == -1 && m_iCamNumber > 0) { m_iCameraIndex = 0; m_iListIndex = 0; }
+	if (m_iCameraIndex != -1) {
+		int e = m_CameraManager.Open_Camera(m_iCameraIndex, m_iCamPosition[m_iCameraIndex]);
+		if (e == 0)       m_ctrlCamList.SetItemText(m_iListIndex, 3, _T("열림"));
+		else if (e == -1) m_ctrlCamList.SetItemText(m_iListIndex, 3, _T("이미 열림"));
+		else              m_ctrlCamList.SetItemText(m_iListIndex, 3, _T("열기 실패"));
+	} else AfxMessageBox(_T("리스트에서 카메라를 먼저 선택하세요."));
 }
 
 void CPylonSampleProgramDlg::OnBnClickedCloseCamBtn()
 {
-	if(m_CameraManager.m_bCamOpenFlag[m_iCameraIndex] == true)
+	if (m_CameraManager.m_bCamOpenFlag[m_iCameraIndex])
 	{
-		if(m_CameraManager.Close_Camera(m_iCameraIndex)==0)
+		if (m_CameraManager.Close_Camera(m_iCameraIndex) == 0)
 		{
-			m_ctrlCamList.SetItemText(m_iListIndex, 3, _T("Close_Success"));
- 			if(bitmapinfo[m_iCameraIndex]) { delete bitmapinfo[m_iCameraIndex]; bitmapinfo[m_iCameraIndex]=NULL; }
-			if(pImageColorDestBuffer[m_iCameraIndex])
-			{
-				for(int i=0; i<BUF_NUM; i++) free(pImageColorDestBuffer[m_iCameraIndex][i]);
-				free(pImageColorDestBuffer[m_iCameraIndex]);
-				pImageColorDestBuffer[m_iCameraIndex] = NULL;
-			}
-			if(pImageresizeOrgBuffer[m_iCameraIndex])
-			{
-				for(int i=0; i<BUF_NUM; i++) free(pImageresizeOrgBuffer[m_iCameraIndex][i]);
-				free(pImageresizeOrgBuffer[m_iCameraIndex]);
-				pImageresizeOrgBuffer[m_iCameraIndex] = NULL;
+			m_ctrlCamList.SetItemText(m_iListIndex, 3, _T("닫힘"));
+			if (bitmapinfo[m_iCameraIndex]) { delete bitmapinfo[m_iCameraIndex]; bitmapinfo[m_iCameraIndex] = NULL; }
+			if (pImageColorDestBuffer[m_iCameraIndex]) {
+				for (int i = 0; i < BUF_NUM; i++) free(pImageColorDestBuffer[m_iCameraIndex][i]);
+				free(pImageColorDestBuffer[m_iCameraIndex]); pImageColorDestBuffer[m_iCameraIndex] = NULL;
 			}
 		}
-		else { m_ctrlCamList.SetItemText(m_iListIndex, 3, _T("Close_Fail")); }
+		else m_ctrlCamList.SetItemText(m_iListIndex, 3, _T("닫기 실패"));
 	}
 }
 
 void CPylonSampleProgramDlg::OnBnClickedConnectCameraBtn()
 {
 	if (!m_ctrlCamList.GetSafeHwnd()) return;
-
 	int nIndex = m_ctrlCamList.GetNextItem(-1, LVNI_SELECTED);
-	if (nIndex < 0 || nIndex >= CAM_NUM) {
-		AfxMessageBox(_T("연결할 카메라를 리스트에서 선택해 주세요."));
-		return;
-	}
+	if (nIndex < 0 || nIndex >= CAM_NUM) { AfxMessageBox(_T("연결할 카메라를 선택하세요.")); return; }
 	m_iCameraIndex = nIndex;
 
 	int nRet = m_CameraManager.Connect_Camera(m_iCameraIndex, 0, 0, 0, 0, _T("Mono8"));
 	if (nRet == 0)
 	{
-		m_ctrlCamList.SetItemText(m_iCameraIndex, 3, _T("Connected"));
-
-		// ── 서버 연결 시도 + UI 상태 업데이트 ──
-		std::string serverIP   = "10.10.10.109";
-		int         serverPort = 8000;
-		if (m_CameraManager.ConnectToServer(serverIP, serverPort))
-		{
+		m_ctrlCamList.SetItemText(m_iCameraIndex, 3, _T("연결됨"));
+		if (m_CameraManager.ConnectToServer("10.10.10.109", 8000)) {
 			SetDlgItemText(IDC_STATUS_SERVER, _T("연결됨 (10.10.10.109:8000)"));
-			TRACE(_T("AI Server Connected\n"));
-		}
-		else
-		{
+		} else {
 			SetDlgItemText(IDC_STATUS_SERVER, _T("서버 연결 실패"));
-			TRACE(_T("AI Server Connection Failed\n"));
 		}
 	}
-	else
-	{
-		m_ctrlCamList.SetItemText(m_iCameraIndex, 3, _T("Connection Fail"));
-		AfxMessageBox(_T("카메라 연결에 실패했습니다."));
-	}
+	else { m_ctrlCamList.SetItemText(m_iCameraIndex, 3, _T("연결 실패")); AfxMessageBox(_T("카메라 연결에 실패했습니다.")); }
 }
 
 void CPylonSampleProgramDlg::OnBnClickedGrabSingleBtn()
 {
-	if (m_iCameraIndex < 0 || m_iCameraIndex >= CAM_NUM) return;
-	if (m_CameraManager.m_bCamConnectFlag[m_iCameraIndex] == false) return;
-
-	try
-	{
+	if (m_iCameraIndex < 0 || !m_CameraManager.m_bCamConnectFlag[m_iCameraIndex]) return;
+	try {
 		bLiveFlag[m_iCameraIndex] = false;
-		if (m_CameraManager.SingleGrab(m_iCameraIndex) == 0)
+		if (m_CameraManager.SingleGrab(m_iCameraIndex) == 0 &&
+		    m_CameraManager.pImage24Buffer[m_iCameraIndex] &&
+		    pImageColorDestBuffer[m_iCameraIndex] &&
+		    pImageColorDestBuffer[m_iCameraIndex][0])
 		{
-			if (m_CameraManager.pImage24Buffer[m_iCameraIndex] != NULL)
-			{
-				if (pImageColorDestBuffer[m_iCameraIndex] != NULL &&
-				    pImageColorDestBuffer[m_iCameraIndex][0] != NULL)
-				{
-					int nRoiSize = 260 * 260 * 3;
-					memcpy(pImageColorDestBuffer[m_iCameraIndex][0],
-					       m_CameraManager.pImage24Buffer[m_iCameraIndex], nRoiSize);
-					switch (m_iCameraIndex)
-					{
-					case 0: DisplayCam0(pImageColorDestBuffer[0][0]); break;
-					case 1: DisplayCam1(pImageColorDestBuffer[1][0]); break;
-					case 2: DisplayCam2(pImageColorDestBuffer[2][0]); break;
-					case 3: DisplayCam3(pImageColorDestBuffer[3][0]); break;
-					}
-					m_CameraManager.ReadEnd(m_iCameraIndex);
-					bLiveFlag[m_iCameraIndex] = true;
-				}
-			}
+			memcpy(pImageColorDestBuffer[m_iCameraIndex][0], m_CameraManager.pImage24Buffer[m_iCameraIndex], 260*260*3);
+			DisplayCam0(pImageColorDestBuffer[0][0]);
+			m_CameraManager.ReadEnd(m_iCameraIndex);
+			bLiveFlag[m_iCameraIndex] = true;
 		}
-	}
-	catch (...) { TRACE(_T("Unknown Exception in GrabSingle Button\n")); }
+	} catch (...) {}
 }
 
 void CPylonSampleProgramDlg::AllocImageBuf(void)
 {
 	UpdateData();
-	if (m_CameraManager.m_strCM_ImageForamt[m_iCameraIndex] == "Mono8" ||
-	    m_CameraManager.m_strCM_ImageForamt[m_iCameraIndex] == "Mono12" ||
-	    m_CameraManager.m_strCM_ImageForamt[m_iCameraIndex] == "Mono16")
-	{
-		pImageresizeOrgBuffer[m_iCameraIndex] = (unsigned char**)malloc(BUF_NUM * sizeof(unsigned char*));
-		for (int i = 0; i < BUF_NUM; i++)
-			pImageresizeOrgBuffer[m_iCameraIndex][i] = (unsigned char*)malloc(
-			    m_CameraManager.m_iCM_reSizeWidth[m_iCameraIndex] *
-			    m_CameraManager.m_iCM_Height[m_iCameraIndex]);
-	}
-
 	if (pImageColorDestBuffer[m_iCameraIndex] == NULL)
 	{
 		pImageColorDestBuffer[m_iCameraIndex] = (unsigned char**)malloc(BUF_NUM * sizeof(unsigned char*));
-		for (int i = 0; i < BUF_NUM; i++)
-		{
-			pImageColorDestBuffer[m_iCameraIndex][i] = (unsigned char*)malloc(260 * 260 * 3);
-			memset(pImageColorDestBuffer[m_iCameraIndex][i], 0, 260 * 260 * 3);
+		for (int i = 0; i < BUF_NUM; i++) {
+			pImageColorDestBuffer[m_iCameraIndex][i] = (unsigned char*)malloc(260*260*3);
+			memset(pImageColorDestBuffer[m_iCameraIndex][i], 0, 260*260*3);
 		}
 	}
-
-	switch (m_iCameraIndex)
-	{
-	case 0: hWnd[0]=GetDlgItem(IDC_CAM0_DISPLAY)->GetSafeHwnd(); GetDlgItem(IDC_CAM0_DISPLAY)->GetClientRect(&rectStaticClient[0]); hdc[0]=::GetDC(hWnd[0]); break;
-	case 1: hWnd[1]=GetDlgItem(IDC_CAM1_DISPLAY)->GetSafeHwnd(); GetDlgItem(IDC_CAM1_DISPLAY)->GetClientRect(&rectStaticClient[1]); hdc[1]=::GetDC(hWnd[1]); break;
-	case 2: hWnd[2]=GetDlgItem(IDC_CAM2_DISPLAY)->GetSafeHwnd(); GetDlgItem(IDC_CAM2_DISPLAY)->GetClientRect(&rectStaticClient[2]); hdc[2]=::GetDC(hWnd[2]); break;
-	case 3: hWnd[3]=GetDlgItem(IDC_CAM3_DISPLAY)->GetSafeHwnd(); GetDlgItem(IDC_CAM3_DISPLAY)->GetClientRect(&rectStaticClient[3]); hdc[3]=::GetDC(hWnd[3]); break;
-	}
+	hWnd[0] = GetDlgItem(IDC_CAM0_DISPLAY)->GetSafeHwnd();
+	GetDlgItem(IDC_CAM0_DISPLAY)->GetClientRect(&rectStaticClient[0]);
+	hdc[0] = ::GetDC(hWnd[0]);
 }
 
 void CPylonSampleProgramDlg::InitBitmap(int nCamIndex)
 {
-   if(m_CameraManager.m_strCM_ImageForamt[m_iCameraIndex]=="Mono8" || m_CameraManager.m_strCM_ImageForamt[m_iCameraIndex]=="Mono16")
-   {
-		if(bitmapinfo[nCamIndex]) { delete bitmapinfo[nCamIndex]; bitmapinfo[nCamIndex]=NULL; }
-		bitmapinfo[nCamIndex]=(BITMAPINFO*)(new char[sizeof(BITMAPINFOHEADER)+256*sizeof(RGBQUAD)]);
-		bitmapinfo[nCamIndex]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-		bitmapinfo[nCamIndex]->bmiHeader.biWidth = (int)m_CameraManager.m_iCM_reSizeWidth[nCamIndex];
-		bitmapinfo[nCamIndex]->bmiHeader.biHeight = -(int)m_CameraManager.m_iCM_Height[nCamIndex];
-		bitmapinfo[nCamIndex]->bmiHeader.biPlanes = 1;
-		bitmapinfo[nCamIndex]->bmiHeader.biCompression = BI_RGB;
-		bitmapinfo[nCamIndex]->bmiHeader.biBitCount = 8;
-		bitmapinfo[nCamIndex]->bmiHeader.biSizeImage = (int)(m_CameraManager.m_iCM_reSizeWidth[nCamIndex]*m_CameraManager.m_iCM_Height[nCamIndex]);
-		bitmapinfo[nCamIndex]->bmiHeader.biXPelsPerMeter = 0;
-		bitmapinfo[nCamIndex]->bmiHeader.biYPelsPerMeter = 0;
-		bitmapinfo[nCamIndex]->bmiHeader.biClrUsed = 256;
-		bitmapinfo[nCamIndex]->bmiHeader.biClrImportant = 0;
-		for(int j=0;j<256;j++){
-			bitmapinfo[nCamIndex]->bmiColors[j].rgbRed=(unsigned char)j;
-			bitmapinfo[nCamIndex]->bmiColors[j].rgbGreen=(unsigned char)j;
-			bitmapinfo[nCamIndex]->bmiColors[j].rgbBlue=(unsigned char)j;
-			bitmapinfo[nCamIndex]->bmiColors[j].rgbReserved=0;
-		}
-   }
-   else
-   {
-		if(bitmapinfo[nCamIndex]) { delete bitmapinfo[nCamIndex]; bitmapinfo[nCamIndex]=NULL; }
-		bitmapinfo[nCamIndex]=(BITMAPINFO*)(new char[sizeof(BITMAPINFOHEADER)+256*sizeof(RGBQUAD)]);
-		bitmapinfo[nCamIndex]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-		bitmapinfo[nCamIndex]->bmiHeader.biWidth = (int)m_CameraManager.m_iCM_reSizeWidth[nCamIndex];
-		bitmapinfo[nCamIndex]->bmiHeader.biHeight = -(int)m_CameraManager.m_iCM_Height[nCamIndex];
-		bitmapinfo[nCamIndex]->bmiHeader.biPlanes = 1;
-		bitmapinfo[nCamIndex]->bmiHeader.biCompression = BI_RGB;
-		bitmapinfo[nCamIndex]->bmiHeader.biBitCount = 24;
-		bitmapinfo[nCamIndex]->bmiHeader.biSizeImage = (int)m_CameraManager.m_iCM_reSizeWidth[nCamIndex]*(int)m_CameraManager.m_iCM_Height[nCamIndex]*3;
-		bitmapinfo[nCamIndex]->bmiHeader.biXPelsPerMeter = 0;
-		bitmapinfo[nCamIndex]->bmiHeader.biYPelsPerMeter = 0;
-		bitmapinfo[nCamIndex]->bmiHeader.biClrUsed = 256;
-		bitmapinfo[nCamIndex]->bmiHeader.biClrImportant = 0;
-		for(int j=0;j<256;j++){
-			bitmapinfo[nCamIndex]->bmiColors[j].rgbRed=(unsigned char)j;
-			bitmapinfo[nCamIndex]->bmiColors[j].rgbGreen=(unsigned char)j;
-			bitmapinfo[nCamIndex]->bmiColors[j].rgbBlue=(unsigned char)j;
-			bitmapinfo[nCamIndex]->bmiColors[j].rgbReserved=0;
-		}
-   }
+	if (bitmapinfo[nCamIndex]) { delete bitmapinfo[nCamIndex]; bitmapinfo[nCamIndex] = NULL; }
+	bitmapinfo[nCamIndex] = (BITMAPINFO*)(new char[sizeof(BITMAPINFOHEADER) + 256*sizeof(RGBQUAD)]);
+	bitmapinfo[nCamIndex]->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bitmapinfo[nCamIndex]->bmiHeader.biWidth = 260;
+	bitmapinfo[nCamIndex]->bmiHeader.biHeight = -260;
+	bitmapinfo[nCamIndex]->bmiHeader.biPlanes = 1;
+	bitmapinfo[nCamIndex]->bmiHeader.biCompression = BI_RGB;
+	bitmapinfo[nCamIndex]->bmiHeader.biBitCount = 24;
+	bitmapinfo[nCamIndex]->bmiHeader.biSizeImage = 260*260*3;
+	bitmapinfo[nCamIndex]->bmiHeader.biClrUsed = 0;
 }
 
-// ── Display 함수들 ────────────────────────────────────────────
-
-void CPylonSampleProgramDlg::DisplayCam0(void* pImageBuf)
+void CPylonSampleProgramDlg::DisplayCam0(void* p)
 {
-	if (pImageBuf == NULL || hdc[0] == NULL) return;
-	bitmapinfo[0]->bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
-	bitmapinfo[0]->bmiHeader.biWidth=260; bitmapinfo[0]->bmiHeader.biHeight=-260;
-	bitmapinfo[0]->bmiHeader.biPlanes=1; bitmapinfo[0]->bmiHeader.biBitCount=24;
-	bitmapinfo[0]->bmiHeader.biCompression=BI_RGB; bitmapinfo[0]->bmiHeader.biSizeImage=260*260*3;
-	bitmapinfo[0]->bmiHeader.biClrUsed=0;
+	if (!p || !hdc[0]) return;
 	SetStretchBltMode(hdc[0], COLORONCOLOR);
-	StretchDIBits(hdc[0], 0,0, rectStaticClient[0].Width(), rectStaticClient[0].Height(),
-	    0,0,260,260, pImageBuf, bitmapinfo[0], DIB_RGB_COLORS, SRCCOPY);
+	StretchDIBits(hdc[0],0,0,rectStaticClient[0].Width(),rectStaticClient[0].Height(),0,0,260,260,p,bitmapinfo[0],DIB_RGB_COLORS,SRCCOPY);
 }
-
-void CPylonSampleProgramDlg::DisplayCam1(void* pImageBuf)
-{
-	if (pImageBuf == NULL || hdc[0] == NULL) return;
-	bitmapinfo[0]->bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
-	bitmapinfo[0]->bmiHeader.biWidth=260; bitmapinfo[0]->bmiHeader.biHeight=-260;
-	bitmapinfo[0]->bmiHeader.biPlanes=1; bitmapinfo[0]->bmiHeader.biBitCount=24;
-	bitmapinfo[0]->bmiHeader.biCompression=BI_RGB; bitmapinfo[0]->bmiHeader.biSizeImage=260*260*3;
-	bitmapinfo[0]->bmiHeader.biClrUsed=0;
-	SetStretchBltMode(hdc[0], COLORONCOLOR);
-	StretchDIBits(hdc[0], 0,0, rectStaticClient[0].Width(), rectStaticClient[0].Height(),
-	    0,0,260,260, pImageBuf, bitmapinfo[0], DIB_RGB_COLORS, SRCCOPY);
-}
-
-void CPylonSampleProgramDlg::DisplayCam2(void* pImageBuf)
-{
-	if (pImageBuf == NULL || hdc[0] == NULL) return;
-	bitmapinfo[0]->bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
-	bitmapinfo[0]->bmiHeader.biWidth=260; bitmapinfo[0]->bmiHeader.biHeight=-260;
-	bitmapinfo[0]->bmiHeader.biPlanes=1; bitmapinfo[0]->bmiHeader.biBitCount=24;
-	bitmapinfo[0]->bmiHeader.biCompression=BI_RGB; bitmapinfo[0]->bmiHeader.biSizeImage=260*260*3;
-	bitmapinfo[0]->bmiHeader.biClrUsed=0;
-	SetStretchBltMode(hdc[0], COLORONCOLOR);
-	StretchDIBits(hdc[0], 0,0, rectStaticClient[0].Width(), rectStaticClient[0].Height(),
-	    0,0,260,260, pImageBuf, bitmapinfo[0], DIB_RGB_COLORS, SRCCOPY);
-}
-
-void CPylonSampleProgramDlg::DisplayCam3(void* pImageBuf)
-{
-	if (pImageBuf == NULL || hdc[0] == NULL) return;
-	bitmapinfo[0]->bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
-	bitmapinfo[0]->bmiHeader.biWidth=260; bitmapinfo[0]->bmiHeader.biHeight=-260;
-	bitmapinfo[0]->bmiHeader.biPlanes=1; bitmapinfo[0]->bmiHeader.biBitCount=24;
-	bitmapinfo[0]->bmiHeader.biCompression=BI_RGB; bitmapinfo[0]->bmiHeader.biSizeImage=260*260*3;
-	bitmapinfo[0]->bmiHeader.biClrUsed=0;
-	SetStretchBltMode(hdc[0], COLORONCOLOR);
-	StretchDIBits(hdc[0], 0,0, rectStaticClient[0].Width(), rectStaticClient[0].Height(),
-	    0,0,260,260, pImageBuf, bitmapinfo[0], DIB_RGB_COLORS, SRCCOPY);
-}
-
-// ── 라이브 버튼들 ─────────────────────────────────────────────
+void CPylonSampleProgramDlg::DisplayCam1(void* p) { DisplayCam0(p); }
+void CPylonSampleProgramDlg::DisplayCam2(void* p) { DisplayCam0(p); }
+void CPylonSampleProgramDlg::DisplayCam3(void* p) { DisplayCam0(p); }
 
 void CPylonSampleProgramDlg::OnBnClickedCam0Live()
 {
-	if (m_CameraManager.m_bCamConnectFlag[0] == true)
-	{
-		bStopThread[0] = !bStopThread[0];
-		if (bStopThread[0]) {
-			bLiveFlag[0] = true;
-			m_CameraManager.GrabLive(0, 0);
-			SetDlgItemText(IDC_CAM0_LIVE, _T("Live_Cam0_Stop"));
-			m_nCamIndexBuf[0] = 0;
-			AfxBeginThread(LiveGrabThreadCam0, &m_nCamIndexBuf[0]);
-		} else {
-			bLiveFlag[0] = false;
-			SetDlgItemText(IDC_CAM0_LIVE, _T("Live_Cam0_Start"));
-			m_CameraManager.LiveStop(0, 0);
-		}
-	}
-	else
-	{
-		AfxMessageBox(_T("Camera0 Connect를 먼저 하세요!!"));
-		CButton* pButton = (CButton*)GetDlgItem(IDC_CAM0_LIVE);
-		if (pButton) pButton->SetCheck(0);
+	if (!m_CameraManager.m_bCamConnectFlag[0]) { AfxMessageBox(_T("먼저 카메라를 연결하세요.")); CButton*p=(CButton*)GetDlgItem(IDC_CAM0_LIVE); if(p)p->SetCheck(0); return; }
+	bStopThread[0] = !bStopThread[0];
+	if (bStopThread[0]) {
+		bLiveFlag[0]=true; m_CameraManager.GrabLive(0,0);
+		SetDlgItemText(IDC_CAM0_LIVE,_T("라이브 정지"));
+		m_nCamIndexBuf[0]=0; AfxBeginThread(LiveGrabThreadCam0,&m_nCamIndexBuf[0]);
+	} else {
+		bLiveFlag[0]=false; SetDlgItemText(IDC_CAM0_LIVE,_T("라이브 시작"));
+		m_CameraManager.LiveStop(0,0);
 	}
 }
 
-void CPylonSampleProgramDlg::OnBnClickedCam1Live()
-{
-	if (m_CameraManager.m_bCamConnectFlag[0] == true)
-	{
-		bStopThread[0] = !bStopThread[0];
-		if (bStopThread[0]) {
-			bLiveFlag[0]=true; m_CameraManager.GrabLive(0,0);
-			SetDlgItemText(IDC_CAM0_LIVE,_T("Live_Cam0_Stop"));
-			m_nCamIndexBuf[0]=0; AfxBeginThread(LiveGrabThreadCam0,&m_nCamIndexBuf[0]);
-		} else {
-			bLiveFlag[0]=false; SetDlgItemText(IDC_CAM0_LIVE,_T("Live_Cam0_Start"));
-			m_CameraManager.LiveStop(0,0);
-		}
-	}
-	else { AfxMessageBox(_T("Camera0 Connect를 먼저 하세요!!")); CButton*p=(CButton*)GetDlgItem(IDC_CAM0_LIVE); if(p)p->SetCheck(0); }
-}
-
-void CPylonSampleProgramDlg::OnBnClickedCam2Live()
-{
-	if (m_CameraManager.m_bCamConnectFlag[0] == true)
-	{
-		bStopThread[0]=!bStopThread[0];
-		if(bStopThread[0]){bLiveFlag[0]=true;m_CameraManager.GrabLive(0,0);SetDlgItemText(IDC_CAM0_LIVE,_T("Live_Cam0_Stop"));m_nCamIndexBuf[0]=0;AfxBeginThread(LiveGrabThreadCam0,&m_nCamIndexBuf[0]);}
-		else{bLiveFlag[0]=false;SetDlgItemText(IDC_CAM0_LIVE,_T("Live_Cam0_Start"));m_CameraManager.LiveStop(0,0);}
-	}
-	else{AfxMessageBox(_T("Camera0 Connect를 먼저 하세요!!"));CButton*p=(CButton*)GetDlgItem(IDC_CAM0_LIVE);if(p)p->SetCheck(0);}
-}
-
-void CPylonSampleProgramDlg::OnBnClickedCam3Live()
-{
-	if (m_CameraManager.m_bCamConnectFlag[0] == true)
-	{
-		bStopThread[0]=!bStopThread[0];
-		if(bStopThread[0]){bLiveFlag[0]=true;m_CameraManager.GrabLive(0,0);SetDlgItemText(IDC_CAM0_LIVE,_T("Live_Cam0_Stop"));m_nCamIndexBuf[0]=0;AfxBeginThread(LiveGrabThreadCam0,&m_nCamIndexBuf[0]);}
-		else{bLiveFlag[0]=false;SetDlgItemText(IDC_CAM0_LIVE,_T("Live_Cam0_Start"));m_CameraManager.LiveStop(0,0);}
-	}
-	else{AfxMessageBox(_T("Camera0 Connect를 먼저 하세요!!"));CButton*p=(CButton*)GetDlgItem(IDC_CAM0_LIVE);if(p)p->SetCheck(0);}
-}
+void CPylonSampleProgramDlg::OnBnClickedCam1Live() { OnBnClickedCam0Live(); }
+void CPylonSampleProgramDlg::OnBnClickedCam2Live() { OnBnClickedCam0Live(); }
+void CPylonSampleProgramDlg::OnBnClickedCam3Live() { OnBnClickedCam0Live(); }
 
 void CPylonSampleProgramDlg::OnBnClickedTwoCameraLiveBtn()
 {
-	if(m_CameraManager.m_bCamConnectFlag[0] == true)
-	{
-		bStopThread[0]=(bStopThread[0]+1)&0x01;
-		if(bStopThread[0]){bLiveFlag[0]=true;m_CameraManager.GrabLive(0,1);SetDlgItemText(IDC_CAM0_LIVE,_T("Live_Cam0_Stop"));AfxBeginThread(LiveGrabThreadCam0,&m_nCamIndexBuf[0]);}
-		else{bLiveFlag[0]=false;SetDlgItemText(IDC_CAM0_LIVE,_T("Live_Cam0_Start"));m_CameraManager.LiveStop(0,1);}
-	}
-	else{AfxMessageBox(_T("Camera0 Connect를 하세요!!"));CButton*p=(CButton*)pMainDlg->GetDlgItem(IDC_CAM0_LIVE);p->SetCheck(0);}
-
-	if(m_CameraManager.m_bCamConnectFlag[1] == true)
-	{
-		bStopThread[1]=(bStopThread[1]+1)&0x01;
-		if(bStopThread[1]){bLiveFlag[1]=true;SetDlgItemText(IDC_CAM1_LIVE,_T("Live_Cam1_Stop"));AfxBeginThread(LiveGrabThreadCam0,&m_nCamIndexBuf[1]);}
-		else{bLiveFlag[1]=false;SetDlgItemText(IDC_CAM1_LIVE,_T("Live_Cam1_Start"));}
-	}
-	else{AfxMessageBox(_T("Camera1 Connect를 하세요!!"));CButton*p=(CButton*)pMainDlg->GetDlgItem(IDC_CAM1_LIVE);p->SetCheck(0);}
+	OnBnClickedCam0Live();
 }
 
 void CPylonSampleProgramDlg::OnBnClickedSoftTrigBtn()
@@ -791,163 +517,97 @@ void CPylonSampleProgramDlg::OnBnClickedSoftTrigBtn()
 
 void CPylonSampleProgramDlg::OnBnClickedExitBtn()
 {
-	if (m_CameraManager.m_bIsServerConnected)
-		m_CameraManager.DisconnectFromServer();
-
-	for (int k = 0; k < CAM_NUM; k++)
-	{
-		bStopThread[k] = false;
-		m_CameraManager.LiveStop(k, 0);
-		if(bitmapinfo[k]){ delete bitmapinfo[k]; bitmapinfo[k]=NULL; }
-		if(pImageColorDestBuffer[k])
-		{
-			for(int i=0;i<BUF_NUM;i++) if(pImageColorDestBuffer[k][i]) free(pImageColorDestBuffer[k][i]);
+	if (m_CameraManager.m_bIsServerConnected) m_CameraManager.DisconnectFromServer();
+	for (int k = 0; k < CAM_NUM; k++) {
+		bStopThread[k] = false; m_CameraManager.LiveStop(k, 0);
+		if (bitmapinfo[k]) { delete bitmapinfo[k]; bitmapinfo[k]=NULL; }
+		if (pImageColorDestBuffer[k]) {
+			for (int i=0;i<BUF_NUM;i++) if(pImageColorDestBuffer[k][i]) free(pImageColorDestBuffer[k][i]);
 			free(pImageColorDestBuffer[k]); pImageColorDestBuffer[k]=NULL;
 		}
-		if(pImageresizeOrgBuffer[k])
-		{
-			for(int i=0;i<BUF_NUM;i++) if(pImageresizeOrgBuffer[k][i]) free(pImageresizeOrgBuffer[k][i]);
-			free(pImageresizeOrgBuffer[k]); pImageresizeOrgBuffer[k]=NULL;
-		}
-		if(m_CameraManager.m_bCamOpenFlag[k]==true) m_CameraManager.Close_Camera(k);
+		if (m_CameraManager.m_bCamOpenFlag[k]) m_CameraManager.Close_Camera(k);
 	}
 	CDialog::OnOK();
 }
 
 void CPylonSampleProgramDlg::OnBnClickedSaveImgBtn()
 {
-	int nCam = m_iCameraIndex;
 	CString strPath = _T("C:\\Temp");
 	if (!PathFileExists(strPath)) CreateDirectory(strPath, NULL);
-
-	char szFileName[256];
-	sprintf_s(szFileName, "C:\\Temp\\MetalGuard_Cam%d.bmp", nCam);
-
-	if (m_CameraManager.pImage24Buffer[nCam] != NULL)
+	char sz[256]; sprintf_s(sz,"C:\\Temp\\MetalGuard_Cam%d.bmp",m_iCameraIndex);
+	if (m_CameraManager.pImage24Buffer[m_iCameraIndex])
 	{
-		int nResult = m_CameraManager.SaveImage(0, m_CameraManager.pImage24Buffer[nCam],
-		                                        szFileName, 1, 260, 260, 3);
-		if (nResult == 0) AfxMessageBox(_T("이미지 저장 성공! (C:\\Temp)"));
-		else              AfxMessageBox(_T("이미지 저장 실패! 출력창을 확인하세요."));
-	}
-	else { AfxMessageBox(_T("저장할 이미지 버퍼가 비어있습니다. 먼저 촬영(Grab)을 진행하세요.")); }
+		int r = m_CameraManager.SaveImage(0,m_CameraManager.pImage24Buffer[m_iCameraIndex],sz,1,260,260,3);
+		AfxMessageBox(r==0?_T("저장 성공"):_T("저장 실패"));
+	} else AfxMessageBox(_T("저장할 이미지가 없습니다."));
 }
 
 void CPylonSampleProgramDlg::OnBnClickedButton5()
 {
-	static bool bTrig = false;
-	if(bTrig==false)
-	{
-		SetDlgItemText(IDC_BUTTON5, _T("Trigger_해제")); bTrig=true;
-		m_CameraManager.SetEnumeration(m_iCameraIndex, "FrameStart", "TriggerSelector");
-		m_CameraManager.SetEnumeration(m_iCameraIndex, "On",         "TriggerMode");
-		m_CameraManager.SetEnumeration(m_iCameraIndex, "Software",   "TriggerSource");
-	}
-	else
-	{
-		SetDlgItemText(IDC_BUTTON5, _T("Trigger_설정")); bTrig=false;
-		m_CameraManager.SetEnumeration(m_iCameraIndex, "Off", "TriggerMode");
-	}
+	static bool bTrig=false;
+	if(!bTrig){SetDlgItemText(IDC_BUTTON5,_T("트리거 해제"));bTrig=true;m_CameraManager.SetEnumeration(m_iCameraIndex,"FrameStart","TriggerSelector");m_CameraManager.SetEnumeration(m_iCameraIndex,"On","TriggerMode");m_CameraManager.SetEnumeration(m_iCameraIndex,"Software","TriggerSource");}
+	else{SetDlgItemText(IDC_BUTTON5,_T("트리거 설정"));bTrig=false;m_CameraManager.SetEnumeration(m_iCameraIndex,"Off","TriggerMode");}
 }
 
 void CPylonSampleProgramDlg::OnNMClickListCam(NMHDR* pNMHDR, LRESULT* pResult)
 {
-	LPNMITEMACTIVATE pNMItemActivate = reinterpret_cast<LPNMITEMACTIVATE>(pNMHDR);
-	int nItem = pNMItemActivate->iItem;
-	if (nItem != -1)
-	{
-		m_iListIndex   = nItem;
-		m_iCameraIndex = nItem;
-		CString str;
-		str.Format(_T("선택된 인덱스: %d"), m_iCameraIndex);
-		AfxMessageBox(str);
-	}
-	*pResult = 0;
+	LPNMITEMACTIVATE p=reinterpret_cast<LPNMITEMACTIVATE>(pNMHDR);
+	if(p->iItem!=-1){m_iListIndex=p->iItem;m_iCameraIndex=p->iItem;}
+	*pResult=0;
 }
 
 void CPylonSampleProgramDlg::OnBnClickedReclassifyBtn()
 {
-	if (m_CameraManager.m_nCurrentMode == SystemMode::NORMAL)
-	{
+	if (m_CameraManager.m_nCurrentMode == SystemMode::NORMAL) {
 		m_CameraManager.m_nCurrentMode = SystemMode::RECLASSIFY;
-		m_CameraManager.WriteLog(0, _T("알림"), _T("시스템 모드 변경: [재분류 모드]"));
 		SetDlgItemText(IDC_RECLASSIFY_BTN, _T("일반모드 복귀"));
-
-		// 콤보박스도 동기화
-		CComboBox* pCombo = (CComboBox*)GetDlgItem(IDC_MODE_COMBO);
-		if (pCombo) pCombo->SetCurSel(1);
-	}
-	else
-	{
+		CComboBox*p=(CComboBox*)GetDlgItem(IDC_MODE_COMBO); if(p)p->SetCurSel(1);
+		WriteLog(_T("[모드] UNCERTAIN 재분류 모드로 전환"));
+	} else {
 		m_CameraManager.m_nCurrentMode = SystemMode::NORMAL;
-		m_CameraManager.WriteLog(0, _T("알림"), _T("시스템 모드 변경: [일반 분류 모드]"));
 		SetDlgItemText(IDC_RECLASSIFY_BTN, _T("재분류 모드"));
-
-		// 콤보박스도 동기화
-		CComboBox* pCombo = (CComboBox*)GetDlgItem(IDC_MODE_COMBO);
-		if (pCombo) pCombo->SetCurSel(0);
+		CComboBox*p=(CComboBox*)GetDlgItem(IDC_MODE_COMBO); if(p)p->SetCurSel(0);
+		WriteLog(_T("[모드] 실시간 검출 모드로 전환"));
 	}
 }
 
-// ── 신규: 운영 모드 콤보박스 변경 핸들러 ──────────────────────
 void CPylonSampleProgramDlg::OnCbnSelchangeModeCombo()
 {
-	CComboBox* pCombo = (CComboBox*)GetDlgItem(IDC_MODE_COMBO);
-	if (!pCombo) return;
-
-	int nSel = pCombo->GetCurSel();
-	if (nSel == 1)
-	{
-		m_CameraManager.m_nCurrentMode = SystemMode::RECLASSIFY;
-		SetDlgItemText(IDC_RECLASSIFY_BTN, _T("일반모드 복귀"));
-		m_CameraManager.WriteLog(0, _T("알림"), _T("운영 모드: UNCERTAIN 재분류"));
-	}
-	else
-	{
-		m_CameraManager.m_nCurrentMode = SystemMode::NORMAL;
-		SetDlgItemText(IDC_RECLASSIFY_BTN, _T("재분류 모드"));
-		m_CameraManager.WriteLog(0, _T("알림"), _T("운영 모드: 실시간 검출"));
-	}
+	CComboBox*p=(CComboBox*)GetDlgItem(IDC_MODE_COMBO); if(!p)return;
+	if(p->GetCurSel()==1){m_CameraManager.m_nCurrentMode=SystemMode::RECLASSIFY;SetDlgItemText(IDC_RECLASSIFY_BTN,_T("일반모드 복귀"));WriteLog(_T("[모드] UNCERTAIN 재분류 모드"));}
+	else{m_CameraManager.m_nCurrentMode=SystemMode::NORMAL;SetDlgItemText(IDC_RECLASSIFY_BTN,_T("재분류 모드"));WriteLog(_T("[모드] 실시간 검출 모드"));}
 }
 
 UINT CPylonSampleProgramDlg::ThreadReclassify(LPVOID pParam)
 {
-	ReclassifyParam* pData = static_cast<ReclassifyParam*>(pParam);
-	if (pData != nullptr)
-	{
-		pData->pDlg->m_CameraManager.SendImageToAI(0, pData->matImage,
-		    pData->nPlateId, 1, CmdID::IMG_RECLASSIFY);
-		delete pData;
-	}
+	ReclassifyParam*p=static_cast<ReclassifyParam*>(pParam);
+	if(p){p->pDlg->m_CameraManager.SendImageToAI(0,p->matImage,p->nPlateId,1,CmdID::IMG_RECLASSIFY);delete p;}
 	return 0;
 }
 
-// ── 로그 메시지 핸들러 ────────────────────────────────────────
+// ── 로그 헬퍼 (UI 스레드 안전) ────────────────────────────────
+void CPylonSampleProgramDlg::WriteLog(const CString& strMsg)
+{
+	if (g_hMainWnd == NULL || !::IsWindow(g_hMainWnd)) return;
+	CString* pStr = new CString(strMsg);
+	::PostMessage(g_hMainWnd, WM_UPDATE_LOG, (WPARAM)pStr, 0);
+}
 
 LRESULT CPylonSampleProgramDlg::OnUpdateLog(WPARAM wParam, LPARAM lParam)
 {
-	CString* pStrLog = (CString*)wParam;
-	if (pStrLog)
-	{
-		CListBox* pListBox = (CListBox*)GetDlgItem(IDC_LIST_LOG);
-		if (pListBox)
-		{
-			int nIndex = pListBox->AddString(*pStrLog);
-			pListBox->SetCurSel(nIndex);
-			if (pListBox->GetCount() > 500) pListBox->DeleteString(0);
-		}
-		delete pStrLog;
+	CString* pStr = (CString*)wParam;
+	if (!pStr) return 0;
+	CListBox* pLB = (CListBox*)GetDlgItem(IDC_LIST_LOG);
+	if (pLB) {
+		int n = pLB->AddString(*pStr);
+		pLB->SetCurSel(n);
+		if (pLB->GetCount() > 500) pLB->DeleteString(0);
 	}
+	delete pStr;
 	return 0;
 }
 
-// ── 신규: 판정 결과 UI 업데이트 핸들러 (WM_UPDATE_VERDICT) ───
-//
-//  CameraManager.cpp의 ThreadReceiveFromServer()에서
-//  RESULT_SEND(301) 수신 후 VerdictData*를 힙 할당하여
-//  ::PostMessage(pMgr->m_hMainWnd, WM_UPDATE_VERDICT, (WPARAM)pV, 0) 로 전달.
-//  본 함수에서 UI 업데이트 후 delete 처리.
-//
+// ── 판정 결과 UI 업데이트 (WM_UPDATE_VERDICT) ─────────────────
 LRESULT CPylonSampleProgramDlg::OnUpdateVerdict(WPARAM wParam, LPARAM lParam)
 {
 	VerdictData* pV = reinterpret_cast<VerdictData*>(wParam);
@@ -957,63 +617,199 @@ LRESULT CPylonSampleProgramDlg::OnUpdateVerdict(WPARAM wParam, LPARAM lParam)
 	CString sd(pV->defect.c_str());
 	CString tmp;
 
-	// ── 최종 판정 텍스트 ──────────────────────────────────────
-	SetDlgItemText(IDC_VERDICT_DISPLAY, sv);
-	SetDlgItemText(IDC_DEFECT_CLASS,    sd);
+	// 현재 판정 저장 후 색상 갱신 트리거
+	m_strCurrentVerdict = sv;
 
-	// ── AI 확률값 ─────────────────────────────────────────────
+	SetDlgItemText(IDC_VERDICT_DISPLAY, sv);
+	SetDlgItemText(IDC_DEFECT_CLASS, sd);
+
 	tmp.Format(_T("%.1f %%"), pV->prob_normal);  SetDlgItemText(IDC_PROB_NORMAL,  tmp);
 	tmp.Format(_T("%.1f %%"), pV->prob_crack);   SetDlgItemText(IDC_PROB_CRACK,   tmp);
 	tmp.Format(_T("%.1f %%"), pV->prob_hole);    SetDlgItemText(IDC_PROB_HOLE,    tmp);
 	tmp.Format(_T("%.1f %%"), pV->prob_rust);    SetDlgItemText(IDC_PROB_RUST,    tmp);
 	tmp.Format(_T("%.1f %%"), pV->prob_scratch); SetDlgItemText(IDC_PROB_SCRATCH, tmp);
+	tmp.Format(_T("%.1f ms"), pV->inference_ms); SetDlgItemText(IDC_INFER_MS,     tmp);
+	tmp.Format(_T("%.1f ms"), pV->pipeline_ms);  SetDlgItemText(IDC_PIPELINE_MS,  tmp);
 
-	// ── 타이밍 ───────────────────────────────────────────────
-	tmp.Format(_T("%.1f ms"), pV->inference_ms); SetDlgItemText(IDC_INFER_MS,    tmp);
-	tmp.Format(_T("%.1f ms"), pV->pipeline_ms);  SetDlgItemText(IDC_PIPELINE_MS, tmp);
+	// LED
+	{ CString s = (pV->verdict=="PASS")      ? _T("ON") : _T("OFF"); SetDlgItemText(IDC_LED_GREEN,  s); }
+	{ CString s = (pV->verdict=="FAIL")      ? _T("ON") : _T("OFF"); SetDlgItemText(IDC_LED_RED,    s); }
+	{ CString s = (pV->verdict=="UNCERTAIN") ? _T("ON") : _T("OFF"); SetDlgItemText(IDC_LED_YELLOW, s); }
 
-	// ── LED 상태 ──────────────────────────────────────────────
-	SetDlgItemText(IDC_LED_GREEN,  pV->verdict == "PASS"      ? _T("ON  ?") : _T("OFF"));
-	SetDlgItemText(IDC_LED_RED,    pV->verdict == "FAIL"      ? _T("ON  ?") : _T("OFF"));
-	SetDlgItemText(IDC_LED_YELLOW, pV->verdict == "UNCERTAIN" ? _T("ON  ?") : _T("OFF"));
+	// 부저
+	if      (pV->verdict=="PASS")      SetDlgItemText(IDC_CAM0_INFO,_T("없음"));
+	else if (pV->verdict=="FAIL")      SetDlgItemText(IDC_CAM0_INFO,_T("단음 (FAIL)"));
+	else if (pV->verdict=="UNCERTAIN") SetDlgItemText(IDC_CAM0_INFO,_T("이중음 (UNCERTAIN)"));
+	else                               SetDlgItemText(IDC_CAM0_INFO,_T("단음 (TIMEOUT)"));
 
-	// ── 부저 상태 ─────────────────────────────────────────────
-	if      (pV->verdict == "PASS")      SetDlgItemText(IDC_CAM0_INFO, _T("없음"));
-	else if (pV->verdict == "FAIL")      SetDlgItemText(IDC_CAM0_INFO, _T("단음 발신 (FAIL)"));
-	else if (pV->verdict == "UNCERTAIN") SetDlgItemText(IDC_CAM0_INFO, _T("이중음 발신 (UNCERTAIN)"));
-	else                                 SetDlgItemText(IDC_CAM0_INFO, _T("단음 발신 (TIMEOUT)"));
+	// 게이트
+	{ CString s = (pV->verdict=="FAIL")      ? _T("구동 중") : _T("대기"); SetDlgItemText(IDC_STATUS_GATE_A, s); }
+	{ CString s = (pV->verdict=="UNCERTAIN") ? _T("구동 중") : _T("대기"); SetDlgItemText(IDC_STATUS_GATE_B, s); }
 
-	// ── 게이트 상태 ───────────────────────────────────────────
-	SetDlgItemText(IDC_STATUS_GATE_A,
-	    pV->verdict == "FAIL" ? _T("구동 중") : _T("대기"));
-	SetDlgItemText(IDC_STATUS_GATE_B,
-	    pV->verdict == "UNCERTAIN" ? _T("구동 중") : _T("대기"));
+	// 현재 모드 문자열
+	CString strMode = (m_CameraManager.m_nCurrentMode == SystemMode::RECLASSIFY)
+	                  ? _T("재분류") : _T("일반");
 
-	// ── DB 기록 테이블에 행 추가 (맨 위에 삽입) ──────────────
+	// DB 테이블 행 추가 (모드 컬럼 포함)
 	CTime t = CTime::GetCurrentTime();
 	CString strTime = t.Format(_T("%Y-%m-%d %H:%M:%S"));
-
 	m_nDBRowCount++;
-	int nRow = m_listDB.InsertItem(0, _T(""));  // 맨 위에 삽입
-
-	tmp.Format(_T("%d"), m_nDBRowCount);
-	m_listDB.SetItemText(nRow, 0, tmp);
+	int nRow = m_listDB.InsertItem(0, _T(""));
+	tmp.Format(_T("%d"), m_nDBRowCount);      m_listDB.SetItemText(nRow, 0, tmp);
 	m_listDB.SetItemText(nRow, 1, strTime);
-	tmp.Format(_T("%d"), pV->plate_id);
-	m_listDB.SetItemText(nRow, 2, tmp);
-	m_listDB.SetItemText(nRow, 3, sv);
-	tmp.Format(_T("%.0f%%"), pV->prob_normal);  m_listDB.SetItemText(nRow, 4,  tmp);
-	tmp.Format(_T("%.0f%%"), pV->prob_crack);   m_listDB.SetItemText(nRow, 5,  tmp);
-	tmp.Format(_T("%.0f%%"), pV->prob_hole);    m_listDB.SetItemText(nRow, 6,  tmp);
-	tmp.Format(_T("%.0f%%"), pV->prob_rust);    m_listDB.SetItemText(nRow, 7,  tmp);
-	tmp.Format(_T("%.0f%%"), pV->prob_scratch); m_listDB.SetItemText(nRow, 8,  tmp);
-	tmp.Format(_T("%.1f"),   pV->inference_ms); m_listDB.SetItemText(nRow, 9,  tmp);
-	tmp.Format(_T("%.1f"),   pV->pipeline_ms);  m_listDB.SetItemText(nRow, 10, tmp);
+	tmp.Format(_T("%d"), pV->plate_id);       m_listDB.SetItemText(nRow, 2, tmp);
+	m_listDB.SetItemText(nRow, 3, strMode);   // 모드 컬럼
+	m_listDB.SetItemText(nRow, 4, sv);
+	tmp.Format(_T("%.0f%%"),pV->prob_normal);  m_listDB.SetItemText(nRow,5,tmp);
+	tmp.Format(_T("%.0f%%"),pV->prob_crack);   m_listDB.SetItemText(nRow,6,tmp);
+	tmp.Format(_T("%.0f%%"),pV->prob_hole);    m_listDB.SetItemText(nRow,7,tmp);
+	tmp.Format(_T("%.0f%%"),pV->prob_rust);    m_listDB.SetItemText(nRow,8,tmp);
+	tmp.Format(_T("%.0f%%"),pV->prob_scratch); m_listDB.SetItemText(nRow,9,tmp);
+	tmp.Format(_T("%.1f"),  pV->inference_ms); m_listDB.SetItemText(nRow,10,tmp);
+	tmp.Format(_T("%.1f"),  pV->pipeline_ms);  m_listDB.SetItemText(nRow,11,tmp);
+	if (m_listDB.GetItemCount()>100) m_listDB.DeleteItem(m_listDB.GetItemCount()-1);
 
-	// 100행 초과 시 오래된 행 삭제
-	if (m_listDB.GetItemCount() > 100)
-		m_listDB.DeleteItem(m_listDB.GetItemCount() - 1);
+	// 컨트롤 색상 갱신 (판정 결과 패널 전체)
+	if (GetDlgItem(IDC_VERDICT_DISPLAY)) GetDlgItem(IDC_VERDICT_DISPLAY)->Invalidate();
+	if (GetDlgItem(IDC_LED_GREEN))       GetDlgItem(IDC_LED_GREEN)->Invalidate();
+	if (GetDlgItem(IDC_LED_RED))         GetDlgItem(IDC_LED_RED)->Invalidate();
+	if (GetDlgItem(IDC_LED_YELLOW))      GetDlgItem(IDC_LED_YELLOW)->Invalidate();
+	if (GetDlgItem(IDC_PROB_NORMAL))     GetDlgItem(IDC_PROB_NORMAL)->Invalidate();
+	if (GetDlgItem(IDC_PROB_CRACK))      GetDlgItem(IDC_PROB_CRACK)->Invalidate();
+	if (GetDlgItem(IDC_PROB_HOLE))       GetDlgItem(IDC_PROB_HOLE)->Invalidate();
+	if (GetDlgItem(IDC_PROB_RUST))       GetDlgItem(IDC_PROB_RUST)->Invalidate();
+	if (GetDlgItem(IDC_PROB_SCRATCH))    GetDlgItem(IDC_PROB_SCRATCH)->Invalidate();
 
 	delete pV;
 	return 0;
+}
+
+// ── 판정 결과에 따른 컨트롤 배경색 처리 ──────────────────────
+HBRUSH CPylonSampleProgramDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
+{
+	HBRUSH hbr = CDialog::OnCtlColor(pDC, pWnd, nCtlColor);
+
+	if (nCtlColor == CTLCOLOR_STATIC)
+	{
+		UINT nID = pWnd->GetDlgCtrlID();
+
+		// ── 판정 결과 텍스트 (크게 표시되는 PASS/FAIL/UNCERTAIN) ──
+		if (nID == IDC_VERDICT_DISPLAY)
+		{
+			if (m_strCurrentVerdict == _T("PASS")) {
+				pDC->SetTextColor(RGB(0, 128, 0));   // 진초록
+				pDC->SetBkColor(RGB(198, 239, 206)); // 연초록 배경
+				return (HBRUSH)m_brushPass;
+			}
+			else if (m_strCurrentVerdict == _T("FAIL")) {
+				pDC->SetTextColor(RGB(180, 0, 0));   // 진빨강
+				pDC->SetBkColor(RGB(255, 199, 206)); // 연빨강 배경
+				return (HBRUSH)m_brushFail;
+			}
+			else if (m_strCurrentVerdict == _T("UNCERTAIN")) {
+				pDC->SetTextColor(RGB(130, 90, 0));  // 진황색
+				pDC->SetBkColor(RGB(255, 235, 156)); // 연노랑 배경
+				return (HBRUSH)m_brushUncertain;
+			}
+		}
+
+		// ── AI 확률값 텍스트 (최고 확률 클래스에 색상) ──
+		if (nID == IDC_PROB_NORMAL || nID == IDC_PROB_CRACK ||
+		    nID == IDC_PROB_HOLE   || nID == IDC_PROB_RUST  || nID == IDC_PROB_SCRATCH)
+		{
+			if (m_strCurrentVerdict == _T("PASS")) {
+				if (nID == IDC_PROB_NORMAL) {
+					pDC->SetTextColor(RGB(0, 128, 0));
+					pDC->SetBkColor(RGB(198, 239, 206));
+					return (HBRUSH)m_brushPass;
+				}
+			}
+			else if (m_strCurrentVerdict == _T("FAIL")) {
+				if (nID != IDC_PROB_NORMAL) {
+					pDC->SetTextColor(RGB(180, 0, 0));
+					pDC->SetBkColor(RGB(255, 199, 206));
+					return (HBRUSH)m_brushFail;
+				}
+			}
+			else if (m_strCurrentVerdict == _T("UNCERTAIN")) {
+				pDC->SetTextColor(RGB(130, 90, 0));
+				pDC->SetBkColor(RGB(255, 235, 156));
+				return (HBRUSH)m_brushUncertain;
+			}
+		}
+
+		// ── LED 상태 텍스트 색상 ──
+		if (nID == IDC_LED_GREEN) {
+			if (m_strCurrentVerdict == _T("PASS")) {
+				pDC->SetTextColor(RGB(0, 160, 0));
+				pDC->SetBkColor(RGB(198, 239, 206));
+				return (HBRUSH)m_brushPass;
+			}
+		}
+		if (nID == IDC_LED_RED) {
+			if (m_strCurrentVerdict == _T("FAIL")) {
+				pDC->SetTextColor(RGB(200, 0, 0));
+				pDC->SetBkColor(RGB(255, 199, 206));
+				return (HBRUSH)m_brushFail;
+			}
+		}
+		if (nID == IDC_LED_YELLOW) {
+			if (m_strCurrentVerdict == _T("UNCERTAIN")) {
+				pDC->SetTextColor(RGB(160, 100, 0));
+				pDC->SetBkColor(RGB(255, 235, 156));
+				return (HBRUSH)m_brushUncertain;
+			}
+		}
+
+		// ── DB 테이블 행 색상은 NM_CUSTOMDRAW로 처리 (아래 참조) ──
+	}
+
+	return hbr;
+}
+
+// ── DB 테이블 행 색상 (판정 결과에 따라) ──────────────────────
+void CPylonSampleProgramDlg::OnNMCustomdrawDbList(NMHDR* pNMHDR, LRESULT* pResult)
+{
+	NMLVCUSTOMDRAW* pNMCD = reinterpret_cast<NMLVCUSTOMDRAW*>(pNMHDR);
+	*pResult = CDRF_DODEFAULT;
+
+	switch (pNMCD->nmcd.dwDrawStage)
+	{
+	case CDDS_PREPAINT:
+		*pResult = CDRF_NOTIFYITEMDRAW;
+		break;
+
+	case CDDS_ITEMPREPAINT:
+	{
+		int nRow = (int)pNMCD->nmcd.dwItemSpec;
+		// 판정 컬럼(4번)에서 텍스트 가져오기
+		TCHAR szVerdict[32] = { 0 };
+		LVITEM lvi = { 0 };
+		lvi.mask       = LVIF_TEXT;
+		lvi.iItem      = nRow;
+		lvi.iSubItem   = 4;
+		lvi.pszText    = szVerdict;
+		lvi.cchTextMax = 32;
+		m_listDB.GetItem(&lvi);
+
+		CString strV(szVerdict);
+		if (strV == _T("PASS")) {
+			pNMCD->clrText   = RGB(0, 128, 0);
+			pNMCD->clrTextBk = RGB(198, 239, 206);
+		}
+		else if (strV == _T("FAIL")) {
+			pNMCD->clrText   = RGB(180, 0, 0);
+			pNMCD->clrTextBk = RGB(255, 199, 206);
+		}
+		else if (strV == _T("UNCERTAIN")) {
+			pNMCD->clrText   = RGB(130, 90, 0);
+			pNMCD->clrTextBk = RGB(255, 235, 156);
+		}
+		*pResult = CDRF_NEWFONT;
+		break;
+	}
+	default:
+		*pResult = CDRF_DODEFAULT;
+		break;
+	}
 }
