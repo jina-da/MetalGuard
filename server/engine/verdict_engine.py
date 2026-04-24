@@ -71,18 +71,56 @@ class PlateBuffer:
         uncertain_count = self.verdicts.count("UNCERTAIN")
 
         if fail_count >= 2:
-            # FAIL 2장 이상 → 다수결로 defect_class 결정
+            # FAIL 판정된 장들만 추출
+            fail_results = [
+                self.results[i]
+                for i, v in enumerate(self.verdicts) if v == "FAIL"
+            ]
+
+            # hole 예외: FAIL 판정된 장 중 defect=hole이고 prob_hole >= 0.1이면 hole 우선
+            if any(
+                v == "FAIL" and self.defect_classes[i] == "hole" and self.results[i].get("prob_hole", 0.0) >= 0.1
+                for i, v in enumerate(self.verdicts)
+            ):
+                rep_idx = next(
+                    i for i, v in enumerate(self.verdicts)
+                    if v == "FAIL" and self.defect_classes[i] == "hole" and self.results[i].get("prob_hole", 0.0) >= 0.1
+                )
+                return "FAIL", "hole", self.results[rep_idx]
+
+            # FAIL 장들의 defect_class 수집
             fail_defects = [
                 self.defect_classes[i]
                 for i, v in enumerate(self.verdicts) if v == "FAIL"
             ]
-            majority_defect = max(set(fail_defects), key=fail_defects.count)
-            # 다수결 클래스의 첫 번째 장을 대표 AI 응답으로 사용
+            # 다수결로 defect_class 결정
+            max_count = max(fail_defects.count(d) for d in set(fail_defects))
+            top_defects = [d for d in set(fail_defects) if fail_defects.count(d) == max_count]
+
+            if len(top_defects) == 1:
+                # 단독 1위
+                majority_defect = top_defects[0]
+            else:
+                # 동률 → 해당 클래스들의 prob 합산으로 결정
+                prob_key_map = {
+                    "crack": "prob_crack",
+                    "hole":  "prob_hole",
+                    "rust":  "prob_rust",
+                    "scratch": "prob_scratch",
+                    "normal": "prob_normal",
+                }
+                majority_defect = max(
+                    top_defects,
+                    key=lambda d: sum(r.get(prob_key_map.get(d, ""), 0.0) for r in self.results)
+                )
+
+            # 대표 장: majority_defect인 첫 번째 FAIL 장
             rep_idx = next(
                 i for i, v in enumerate(self.verdicts)
                 if v == "FAIL" and self.defect_classes[i] == majority_defect
             )
             return "FAIL", majority_defect, self.results[rep_idx]
+
         elif fail_count == 0 and uncertain_count >= 2:
             # FAIL 없고 UNCERTAIN 2장 이상 → UNCERTAIN (재분류면 FAIL)
             rep_idx = self.verdicts.index("UNCERTAIN")
@@ -250,10 +288,14 @@ class VerdictEngine:
         if inspection_id:
             self._save_pipeline_log(inspection_id, inference_ms, pipeline_ms)
 
-        # 8. plate 버퍼에 누적 → N장 완료 시 종합 판정
+        # 9. plate 버퍼에 누적 → N장 완료 시 종합 판정
         # plate_id가 없으면 (구버전 호환) 즉시 전송
         if task.plate_id is None:
-            self._send_to_mfc(verdict, defect_class, verdict_time)
+            self._send_to_mfc(
+                verdict, defect_class, verdict_time,
+                plate_id=None,
+                rep_ai=ai_response,
+            )
             return
 
         is_reclassify = task.cmd_id == CmdID.IMG_RECLASSIFY 
@@ -448,6 +490,12 @@ class VerdictEngine:
             "inference_ms": round(rep_ai.get("inference_ms", 0.0), 2),
             "plate_id":     plate_id,
         }
+        logger.info(
+            f"[MFC 전송] plate={plate_id} | {verdict} | defect={defect_class} | "
+            f"normal={payload['prob_normal']} | crack={payload['prob_crack']} | "
+            f"hole={payload['prob_hole']} | rust={payload['prob_rust']} | "
+            f"scratch={payload['prob_scratch']} | infer={payload['inference_ms']}ms"
+        )
         send_result_to_mfc(mfc_conn, payload)
 
     # ──────────────────────────────────────────────
