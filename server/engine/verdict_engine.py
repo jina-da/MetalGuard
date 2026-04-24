@@ -61,25 +61,38 @@ class PlateBuffer:
         """N장이 모두 수신됐는지 확인."""
         return len(self.results) >= self.total_shots
 
-    def get_final_verdict(self, is_reclassify: bool = False) -> tuple[str, str]:
+    def get_final_verdict(self, is_reclassify: bool = False) -> tuple[str, str, dict]:
+        """
+        Returns:
+            (verdict, defect_class, representative_ai_response)
+            representative_ai_response: 종합 판정 대표 장의 AI 응답 (prob_*, inference_ms 포함)
+        """
         fail_count = self.verdicts.count("FAIL")
         uncertain_count = self.verdicts.count("UNCERTAIN")
 
         if fail_count >= 2:
-            # FAIL 2장 이상 → FAIL (가장 많이 나온 defect_class 사용)
+            # FAIL 2장 이상 → 다수결로 defect_class 결정
             fail_defects = [
                 self.defect_classes[i]
                 for i, v in enumerate(self.verdicts) if v == "FAIL"
             ]
             majority_defect = max(set(fail_defects), key=fail_defects.count)
-            return "FAIL", majority_defect
+            # 다수결 클래스의 첫 번째 장을 대표 AI 응답으로 사용
+            rep_idx = next(
+                i for i, v in enumerate(self.verdicts)
+                if v == "FAIL" and self.defect_classes[i] == majority_defect
+            )
+            return "FAIL", majority_defect, self.results[rep_idx]
         elif fail_count == 0 and uncertain_count >= 2:
             # FAIL 없고 UNCERTAIN 2장 이상 → UNCERTAIN (재분류면 FAIL)
+            rep_idx = self.verdicts.index("UNCERTAIN")
             if is_reclassify:
-                return "FAIL", "unknown"
-            return "UNCERTAIN", "unknown"
+                return "FAIL", "unknown", self.results[rep_idx]
+            return "UNCERTAIN", "unknown", self.results[rep_idx]
         else:
-            return "PASS", "normal"
+            # PASS → 첫 번째 PASS 장을 대표로 사용
+            rep_idx = self.verdicts.index("PASS") if "PASS" in self.verdicts else 0
+            return "PASS", "normal", self.results[rep_idx]
 
 
 class VerdictEngine:
@@ -170,14 +183,14 @@ class VerdictEngine:
                     continue
 
                 # 모인 장수로 종합 판정
-                final_verdict, final_defect_class = buf.get_final_verdict(is_reclassify=buf.is_reclassify)
+                final_verdict, final_defect_class, rep_ai = buf.get_final_verdict(is_reclassify=buf.is_reclassify)
 
                 logger.warning(
                     f"[VerdictEngine] 버퍼 만료 강제 판정: plate={plate_id} | "
                     f"{final_verdict} | shots={len(buf.results)}/{buf.total_shots}"
                 )
 
-                self._send_to_mfc(final_verdict, final_defect_class, verdict_time)
+                self._send_to_mfc(final_verdict, final_defect_class, verdict_time, plate_id, rep_ai)
                 self._send_to_arduino(final_verdict)
                 del self._plate_buffer[plate_id]
 
@@ -270,7 +283,7 @@ class VerdictEngine:
 
             # N장 완료 or 타임아웃 → 종합 판정
             if buf.is_complete():
-                final_verdict, final_defect_class = buf.get_final_verdict(is_reclassify=is_reclassify)
+                final_verdict, final_defect_class, rep_ai = buf.get_final_verdict(is_reclassify=is_reclassify)
                 verdict_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 mode = "재분류" if is_reclassify else "분류"
@@ -280,8 +293,8 @@ class VerdictEngine:
                     f"shots={len(buf.results)}/{buf.total_shots}"
                 )
 
-                # MFC 전송
-                self._send_to_mfc(final_verdict, final_defect_class, verdict_time)
+                # MFC 전송 (대표 장 AI 응답 포함)
+                self._send_to_mfc(final_verdict, final_defect_class, verdict_time, plate_id, rep_ai)
 
                 # 아두이노 전송
                 self._send_to_arduino(final_verdict)
@@ -406,7 +419,14 @@ class VerdictEngine:
     # MFC 전송 (CmdID.RESULT_SEND: 301)
     # ──────────────────────────────────────────────
 
-    def _send_to_mfc(self, verdict: str, defect_class: str, verdict_time: str) -> None:
+    def _send_to_mfc(
+        self,
+        verdict: str,
+        defect_class: str,
+        verdict_time: str,
+        plate_id: int | None,
+        rep_ai: dict,
+    ) -> None:
         """
         MFC로 판정 결과 전송.
         config.SEND_RESULT_TO_MFC = False 이면 스킵.
@@ -417,9 +437,16 @@ class VerdictEngine:
             return
 
         payload = {
-            "timestamp": verdict_time,
-            "verdict": verdict,
+            "timestamp":    verdict_time,
+            "verdict":      verdict,
             "defect_class": defect_class,
+            "prob_normal":  round(rep_ai.get("prob_normal",  0.0), 4),
+            "prob_crack":   round(rep_ai.get("prob_crack",   0.0), 4),
+            "prob_hole":    round(rep_ai.get("prob_hole",    0.0), 4),
+            "prob_rust":    round(rep_ai.get("prob_rust",    0.0), 4),
+            "prob_scratch": round(rep_ai.get("prob_scratch", 0.0), 4),
+            "inference_ms": round(rep_ai.get("inference_ms", 0.0), 2),
+            "plate_id":     plate_id,
         }
         send_result_to_mfc(mfc_conn, payload)
 
