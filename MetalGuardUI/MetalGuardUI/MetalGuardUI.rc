@@ -1,0 +1,241 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#ifndef APSTUDIO_INVOKED
+#include "targetver.h"
+#endif
+#include "afxres.h"
+#include "verrsrc.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 한국어(대한민국) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)
+LANGUAGE LANG_KOREAN, SUBLANG_DEFAULT
+#pragma code_page(949)
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#ifndef APSTUDIO_INVOKED\r\n"
+    "#include ""targetver.h""\r\n"
+    "#endif\r\n"
+    "#include ""afxres.h""\r\n"
+    "#include ""verrsrc.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)\r\n"
+    "LANGUAGE 18, 1\r\n"
+    "#include ""res\\MetalGuardUI.rc2""  // Microsoft Visual C++?먯꽌 ?몄쭛?섏? ?딅뒗 由ъ냼???ы븿\r\n"
+    "#include ""l.KOR\\afxres.rc""       // ?쒖? 援ъ꽦 ?붿냼\r\n"
+    "#if !defined(_AFXDLL)\r\n"
+    "#include ""l.KOR\\afxribbon.rc""   // MFC 由щ낯 諛?而⑦듃濡?留됰? 由ъ냼???ы븿\r\n"
+    "#endif\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\MetalGuardUI.ico"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 170, 62
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "MetalGuardUI ?뺣낫"
+FONT 9, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,14,14,21,20
+    LTEXT           "MetalGuardUI, 踰꾩쟾 1.0",IDC_STATIC,42,14,114,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) 2026",IDC_STATIC,42,26,114,8
+    DEFPUSHBUTTON   "?뺤씤",IDOK,113,41,50,14,WS_GROUP
+END
+
+IDD_METALGUARDUI_DIALOG DIALOGEX 0, 0, 620, 400
+STYLE DS_SETFONT | WS_MINIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "MetalGuard Arduino Bridge Manager"
+FONT 9, "Courier New", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "연결 설정",IDC_STATIC,7,5,606,62
+    LTEXT           "서버 IP:",IDC_STATIC,16,20,42,10
+    EDITTEXT        IDC_EDIT_SERVER_IP,60,18,140,14,ES_AUTOHSCROLL
+    LTEXT           "포트:",IDC_STATIC,212,20,22,10
+    EDITTEXT        IDC_EDIT_PORT,236,18,60,14,ES_AUTOHSCROLL
+    LTEXT           "아두이노 포트",IDC_STATIC,310,20,55,10
+    COMBOBOX        IDC_COMBO_ARDUINO_PORT,368,18,237,80,CBS_DROPDOWN | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "연결",IDC_BTN_START,16,40,70,18
+    PUSHBUTTON      "정지",IDC_BTN_STOP,96,40,70,18
+    GROUPBOX        "로그 화면",IDC_STATIC,7,72,606,185
+    LTEXT           "서버 로그",IDC_STATIC,16,84,100,10
+    LTEXT           "아두이노 로그",IDC_STATIC,316,84,100,10
+    LISTBOX         IDC_LIST_SERVER_LOG,16,96,290,130,LBS_NOINTEGRALHEIGHT | LBS_NOSEL | WS_VSCROLL | WS_TABSTOP
+    LISTBOX         IDC_LIST_ARDUINO_LOG,316,96,290,130,LBS_NOINTEGRALHEIGHT | LBS_NOSEL | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "서버 로그 지우기",IDC_BTN_CLEAR_SERVER,16,232,100,16
+    PUSHBUTTON      "아두이노 로그 지우기",IDC_BTN_CLEAR_ARDUINO,316,232,100,16
+    GROUPBOX        "시스템 상태",IDC_STATIC,7,262,606,52
+    LTEXT           "운용서버 연결 상태:   ---",IDC_STATIC_SERVER_STATUS,16,276,200,12
+    LTEXT           "아두이노 연결 상태:   ---",IDC_STATIC_ARDUINO_STATUS,16,292,200,12
+    LTEXT           "아두이노 연결 확인 시간:  ---",IDC_STATIC_HEARTBEAT,316,292,288,12
+    GROUPBOX        "수동 조작(디버그)",IDC_STATIC,7,320,606,38
+    PUSHBUTTON      "PASS",IDC_BTN_PASS,16,334,130,18
+    PUSHBUTTON      "FAIL",IDC_BTN_FAIL,166,334,130,18
+    PUSHBUTTON      "UNCERTAIN",IDC_BTN_UNCERTAIN,316,334,130,18
+    PUSHBUTTON      "TIMEOUT",IDC_BTN_TIMEOUT,466,334,130,18
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041204B0"
+        BEGIN
+            VALUE "CompanyName", "TODO: <?뚯궗 ?대쫫>"
+            VALUE "FileDescription", "MetalGuardUI"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "MetalGuardUI.exe"
+            VALUE "LegalCopyright", "TODO: (c) <?뚯궗 ?대쫫>.  All rights reserved."
+            VALUE "OriginalFilename", "MetalGuardUI.exe"
+            VALUE "ProductName", "TODO: <?쒗뭹 ?대쫫>"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x412, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 163
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 55
+    END
+
+    IDD_METALGUARDUI_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 613
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 393
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_METALGUARDUI_DIALOG AFX_DIALOG_LAYOUT
+BEGIN
+    0
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE
+BEGIN
+    IDS_ABOUTBOX            "MetalGuardUI ?뺣낫(&A)..."
+END
+
+#endif    // 한국어(대한민국) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)
+LANGUAGE 18, 1
+#include "res\MetalGuardUI.rc2"  // Microsoft Visual C++?먯꽌 ?몄쭛?섏? ?딅뒗 由ъ냼???ы븿
+#include "l.KOR\afxres.rc"       // ?쒖? 援ъ꽦 ?붿냼
+#if !defined(_AFXDLL)
+#include "l.KOR\afxribbon.rc"   // MFC 由щ낯 諛?而⑦듃濡?留됰? 由ъ냼???ы븿
+#endif
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

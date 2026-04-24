@@ -23,7 +23,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Local.cpp" />
-    <ClCompile Include="Local_send_test.cpp" />
     <ClCompile Include="Serial.cpp" />
     <ClCompile Include="test.cpp" />
   </ItemGroup>

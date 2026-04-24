@@ -23,13 +23,10 @@
     <ClCompile Include="Serial.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="Local.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="test.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="Local_send_test.cpp">
+    <ClCompile Include="Local.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

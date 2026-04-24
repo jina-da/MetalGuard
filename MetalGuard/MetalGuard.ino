@@ -110,14 +110,11 @@ void loop() {
         break;
 
       case 'N':
-        // led_off();
-        // lcd_display("READY...");
-        // motor_normal();
         sys_reset();
         break;
 
       case 'H': // Heartbeat 신호 (PC에서 주기적으로 송신)
-      // 별도 동작 없음(접속 시간 유지용)
+        Serial.println("PONG");
       break;
 
       default:
