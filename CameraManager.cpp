@@ -92,7 +92,7 @@ int CCameraManager::FindCamera(char szCamName[CAM_NUM][100],char szCamSerialNumb
 			{
 				if(	bLogUse==true)
 				{
-        			fprintf(log,"[%d시_%d분_%d초] [FindCamera:: No Camera ]\n",Hour,Min,Sec);
+        			fprintf(log,"[%dh_%dm_%ds] [FindCamera:: No Camera ]\n",Hour,Min,Sec);
 				}
 				return -1;
 			}
@@ -148,21 +148,21 @@ int CCameraManager::Open_Camera(int nCamIndex, int nPosition)
 
 		// --- 오류 수정 구간 시작 ---
 		// Pylon 5~7 버전에서는 RegistrationMode와 Ownership을 명확히 구분해야 합니다.
-		// Ownership_ExternalOwnership 대신 Pylon::Cleanup_None을 사용하는 경우도 많으나,
+		// Ownership_ExternalOwnership 대신 Cleanup_None을 사용하는 경우도 많으나,
 		// 현재 코드의 의도를 유지하기 위해 경로를 완전히 명시합니다.
 
 		// 1. 카메라 제거 콜백 등록
 		m_pCamera[nCamIndex].RegisterConfiguration(
 			this,
-			Pylon::RegistrationMode_Append,
-			Pylon::Cleanup_None  
+			RegistrationMode_Append,
+			Cleanup_None
 		);
 
 		// 2. Grab 완료 이벤트 핸들러 등록
 		m_pCamera[nCamIndex].RegisterImageEventHandler(
 			this,
-			Pylon::RegistrationMode_Append,
-			Pylon::Cleanup_None
+			RegistrationMode_Append,
+			Cleanup_None
 		);
 
 		m_pCamera[nCamIndex].Open();
@@ -470,8 +470,8 @@ void CCameraManager::WriteLog(int nCamIdx, CString strStatus, CString strDetail)
 		{
 			CString strListLine;
 			// [수정] 서버 판정 결과는 로그에서 더 잘 보이도록 특수문자 추가
-			if (strStatus == _T("판정결과")) {
-				strListLine.Format(_T("[%02d:%02d:%02d] ★ %s"), Hour, Min, Sec, strDetail);
+			if (strStatus == _T("판정")) {
+				strListLine.Format(_T("[%02d:%02d:%02d] >> %s"), Hour, Min, Sec, strDetail);
 			}
 			else {
 				strListLine.Format(_T("[%02d:%02d:%02d] CAM%d: %s"), Hour, Min, Sec, nCamIdx, strDetail);
@@ -1346,7 +1346,7 @@ void CCameraManager::OnCameraDeviceRemoved( CInstantCamera& camera)
 			m_bRemoveCamera[0] = true;
 			if(	bLogUse==true)
 			{
-				fprintf(log,"[%d시_%d분_%d초] [OnCameraDeviceRemoved::  Camera 0 removed ]\n",Hour,Min,Sec);
+				fprintf(log,"[%dh_%dm_%ds] [OnCameraDeviceRemoved::  Camera 0 removed ]\n",Hour,Min,Sec);
 			}
 			Close_Camera(0);
 		}
@@ -1356,7 +1356,7 @@ void CCameraManager::OnCameraDeviceRemoved( CInstantCamera& camera)
 			m_bRemoveCamera[1] = true;
 			if(	bLogUse==true)
 			{
-				fprintf(log,"[%d시_%d분_%d초] [OnCameraDeviceRemoved::  Camera 1 removed ]\n",Hour,Min,Sec);
+				fprintf(log,"[%dh_%dm_%ds] [OnCameraDeviceRemoved::  Camera 1 removed ]\n",Hour,Min,Sec);
 			}
 			Close_Camera(1);
 		}
