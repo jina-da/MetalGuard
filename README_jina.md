@@ -79,7 +79,7 @@ metal_guard_server/
   "timestamp": "2026-04-21 14:23:01",
   "plate_id": 1,
   "shot_index": 1,
-  "total_shots": 4
+  "total_shots": 8
 }
 ```
 
@@ -105,9 +105,16 @@ metal_guard_server/
 **RESULT_SEND(301)**
 ```json
 {
-  "timestamp": "2026-04-21 14:23:01",
+  "timestamp": "...",
   "verdict": "PASS",
-  "defect_class": "normal"
+  "defect_class": "normal",
+  "prob_normal": 0.5256,
+  "prob_crack": 0.1807,
+  "prob_hole": 0.0997,
+  "prob_rust": 0.0906,
+  "prob_scratch": 0.1033,
+  "inference_ms": 9.55,
+  "plate_id": 1
 }
 ```
 
@@ -139,7 +146,7 @@ Queue에서 ImageTask 꺼냄
 
 | 판정 | 조건 |
 |------|------|
-| PASS | prob_normal ≥ 0.70 |
+| PASS | prob_normal ≥ 0.675 |
 | UNCERTAIN | max_prob < 0.40 |
 | FAIL | 위 두 조건 모두 해당 없음 |
 
@@ -150,8 +157,6 @@ Queue에서 ImageTask 꺼냄
 | FAIL 2장 이상 | FAIL |
 | FAIL 0장 + UNCERTAIN 2장 이상 | UNCERTAIN |
 | 나머지 | PASS |
-| 전부 PASS | PASS |
-| FAIL 없고 UNCERTAIN 있으면 | UNCERTAIN |
 
 ### 첫 분류 vs 재분류
 
@@ -218,12 +223,13 @@ INSERT 실패 시 자동으로 재연결 후 1회 재시도. MariaDB `wait_timeo
 | `AI_HOST` | 10.10.10.128 | 김범준 AI 서버 |
 | `AI_PORT` | 9000 | AI 서버 포트 |
 | `DB_HOST` | 10.10.10.101 | MariaDB |
-| `PASS_THRESHOLD` | 0.80 | PASS 판정 임계값 |
-| `UNCERTAIN_THRESHOLD` | 0.60 | UNCERTAIN 판정 임계값 |
-| `PIPELINE_TIMEOUT_MS` | 1000 | 철판 단위 목표 시간 |
+| `PASS_THRESHOLD` | 0.65 | PASS 판정 임계값 |
+| `UNCERTAIN_THRESHOLD` | 0.40 | UNCERTAIN 판정 임계값 |
+| `PIPELINE_TIMEOUT_MS` | 2000 | 철판 단위 목표 시간 |
 | `MODEL_VERSION_ID` | 3 | 현재 사용 중인 모델 버전 |
 | `SEND_RESULT_TO_MFC` | True | False로 바꾸면 MFC 전송 스킵 |
-| `SHOT_COUNT` | 4 | 철판 1개당 촬영 장수 |
+| `SHOT_COUNT` | 8 | 철판 1개당 촬영 장수 |
+| `PLATE_BUFFER_EXPIRE_SEC` | 6.0 | 버퍼 만료 시간 (초) |
 
 ---
 
@@ -248,22 +254,3 @@ Ctrl+C
 ```python
 logging.getLogger("server").setLevel(logging.DEBUG)
 ```
-
----
-
-## 📋 현재 개발 상태
-
-### 완료
-- 운용 서버 전체 파일 구현
-- 재분류 UNCERTAIN → FAIL 처리
-- PlateBuffer 만료 타이머 (`_cleanup_expired_buffers`)
-- DB 스키마 정리 (불필요 테이블 제거)
-- 민기님과 기본 통신 테스트 완료 (pipeline ≈ 4~6ms)
-
-### 진행 중
-- 민기님: MFC 콤보박스 선택값 → `cmd_id` 반영 (현재 항상 IMG_SEND=1로 고정 전송 중)
-- 희창님: PING 등록 → VERDICT 수신 → DONE 응답 전체 흐름 테스트
-
-### 예정
-- UNCERTAIN_LIST_REQ/RES (403/404) 구현
-- 이미지 파일 저장 (FAIL/UNCERTAIN 전체, PASS 샘플링)

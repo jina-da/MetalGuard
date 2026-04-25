@@ -16,7 +16,7 @@ DB_PASSWORD = "1234"
 DB_NAME     = "metalguard_db"
 
 # ── 판정 임계값 (김범준 튜닝 기준, 변경 시 여기만 수정) ──
-PASS_THRESHOLD = 0.65        # normal 확률 >= 0.70 이면 PASS
+PASS_THRESHOLD = 0.65        # normal 확률 >= 0.65 이면 PASS
 UNCERTAIN_THRESHOLD = 0.40   # max_prob < 0.40 이면 UNCERTAIN
 # FAIL = 위 두 조건 모두 해당 없음
 
