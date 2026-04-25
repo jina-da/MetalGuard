@@ -208,3 +208,5 @@ __marimo__/
 
 # Windows Zone.Identifier
 *.Zone.Identifier
+
+echo "*.Zone.Identifier" >> .gitignore*.Zone.Identifier
