@@ -32,6 +32,14 @@ AI 모델이 표면 불량을 실시간으로 검출하고 **PASS / FAIL / UNCER
 
 ---
 
+## 🖥️ 시스템 화면
+
+| 대기 중 | 판정 진행 중 |
+|--------|------------|
+| ![MFC 대기 화면](assets/mfc_screen.jpg) | ![MFC 진행 화면](assets/mfc_screen_ing.jpg) |
+
+---
+
 ## 🏗️ 시스템 아키텍처
 
 ```
@@ -63,6 +71,7 @@ AI 모델이 표면 불량을 실시간으로 검출하고 **PASS / FAIL / UNCER
 ```
 MetalGuard/
 ├── README.md                 # 팀 전체 통합 README (현재 파일)
+├── assets/                   # 이미지 리소스
 ├── operation_server/         # 운용 서버 (이지나)
 │   ├── README.md
 │   ├── main.py
@@ -179,6 +188,14 @@ MetalGuard/
 |------|----------|----------|
 | 첫 번째 요청 | 20,000ms | **7.5ms** |
 | 연속 요청 | 8~16ms | **4~5ms** |
+
+---
+
+## 🔍 불량 클래스 예시
+
+| crack | hole | rust | scratch | unknown |
+|-------|------|------|---------|---------|
+| ![crack](assets/crack.png) | ![hole](assets/hole.png) | ![rust](assets/rust.png) | ![scratch](assets/scratch.png) | ![unknown](assets/unknown.png) |
 
 ---
 
