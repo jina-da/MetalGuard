@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37027.9 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MetalGuard", "PylonSampleProgram.vcxproj", "{58FE1BCB-C186-4384-97B2-5C0B242CD87B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Debug|x64 = Debug|x64
+		Metal_Guard|Win32 = Metal_Guard|Win32
+		Metal_Guard|x64 = Metal_Guard|x64
+		Release|Win32 = Release|Win32
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Debug|Win32.ActiveCfg = Debug|Win32
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Debug|Win32.Build.0 = Debug|Win32
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Debug|x64.ActiveCfg = Debug|x64
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Debug|x64.Build.0 = Debug|x64
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Metal_Guard|Win32.ActiveCfg = Release|Win32
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Metal_Guard|Win32.Build.0 = Release|Win32
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Metal_Guard|x64.ActiveCfg = Debug|x64
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Metal_Guard|x64.Build.0 = Debug|x64
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Release|Win32.ActiveCfg = Release|Win32
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Release|Win32.Build.0 = Release|Win32
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Release|x64.ActiveCfg = Release|x64
+		{58FE1BCB-C186-4384-97B2-5C0B242CD87B}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F7AE9D93-3555-4F3E-87F4-3CE4908EB2C3}
+	EndGlobalSection
+EndGlobal
