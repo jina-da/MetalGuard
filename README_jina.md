@@ -12,6 +12,8 @@ metal_guard_server/
 ├── main.py               # 서버 진입점. DB/AI/TCP/판정엔진 순서대로 초기화 후 시그널 대기
 ├── config.py             # 전체 설정값 (IP, 포트, 임계값 등). 코드 수정 없이 여기서만 변경
 ├── constants.py          # PacketHeader 상수, CmdID 정의, build_packet/parse_header 유틸
+├── test_ai.py            # AI 서버 통신 테스트 스크립트
+├── test_db.py            # DB 연결 및 INSERT 테스트 스크립트
 └── server/
     ├── tcp_server.py          # 단일 포트(8000) TCP 서버. cmdId로 분기하여 각 핸들러 호출
     ├── handlers/
@@ -105,9 +107,9 @@ metal_guard_server/
 **RESULT_SEND(301)**
 ```json
 {
-  "timestamp": "...",
-  "verdict": "PASS",
-  "defect_class": "normal",
+  "timestamp": "2026-04-21 14:23:01",
+  "verdict": "FAIL",
+  "defect_class": "crack",
   "prob_normal": 0.5256,
   "prob_crack": 0.1807,
   "prob_hole": 0.0997,
@@ -118,9 +120,7 @@ metal_guard_server/
 }
 ```
 
-
 ---
-
 
 ## 🧠 판정 엔진 (`verdict_engine.py`)
 
@@ -146,17 +146,25 @@ Queue에서 ImageTask 꺼냄
 
 | 판정 | 조건 |
 |------|------|
-| PASS | prob_normal ≥ 0.675 |
-| UNCERTAIN | max_prob < 0.40 |
+| PASS | `prob_normal ≥ 0.675` |
+| UNCERTAIN | `max_prob < 0.40` |
 | FAIL | 위 두 조건 모두 해당 없음 |
 
-### 종합 판정 로직
+### 종합 판정 로직 (8장 기준)
 
 | 조건 | 종합 판정 |
 |------|----------|
 | FAIL 2장 이상 | FAIL |
 | FAIL 0장 + UNCERTAIN 2장 이상 | UNCERTAIN |
 | 나머지 | PASS |
+
+> FAIL + UNCERTAIN 혼재 시 → FAIL 조건 먼저 적용
+
+### FAIL 시 defect_class 결정 순서
+
+1. **hole 예외**: FAIL 판정 장 중 `defect=hole`이고 `prob_hole ≥ 0.1`이면 → hole 우선
+2. **다수결**: FAIL 장들 중 가장 많이 나온 클래스
+3. **동률이면 prob 합산**: 동률 클래스들의 전체 prob 합산 비교 → 높은 쪽
 
 ### 첫 분류 vs 재분류
 
@@ -171,10 +179,9 @@ Queue에서 ImageTask 꺼냄
 ### PlateBuffer 만료 처리
 
 Queue가 비었을 때 주기적으로 `_cleanup_expired_buffers()` 호출.
-`PLATE_BUFFER_EXPIRE_SEC = 6.0` 초 초과 시 모인 장수로 강제 종합 판정 후 버퍼 제거.
+`config.PLATE_BUFFER_EXPIRE_SEC = 6.0` 초 초과 시 모인 장수로 강제 종합 판정 후 버퍼 제거.
 
 ---
-
 
 ## 🏗️ 시스템 아키텍처
 
@@ -185,9 +192,7 @@ Queue가 비었을 때 주기적으로 `_cleanup_expired_buffers()` 호출.
 ![판정 흐름도 1](assets/verdict_flow_1.png)
 ![판정 흐름도 2](assets/verdict_flow_2.png)
 
-
 ---
-
 
 ## 🔌 소켓 관리 (`tcp_server.py`)
 
@@ -225,23 +230,40 @@ INSERT 실패 시 자동으로 재연결 후 1회 재시도. MariaDB `wait_timeo
 | `DB_HOST` | 10.10.10.101 | MariaDB |
 | `PASS_THRESHOLD` | 0.65 | PASS 판정 임계값 |
 | `UNCERTAIN_THRESHOLD` | 0.40 | UNCERTAIN 판정 임계값 |
-| `PIPELINE_TIMEOUT_MS` | 2000 | 철판 단위 목표 시간 |
+| `PIPELINE_TIMEOUT_MS` | 2000 | 철판 단위 목표 시간 (ms) |
 | `MODEL_VERSION_ID` | 3 | 현재 사용 중인 모델 버전 |
 | `SEND_RESULT_TO_MFC` | True | False로 바꾸면 MFC 전송 스킵 |
 | `SHOT_COUNT` | 8 | 철판 1개당 촬영 장수 |
+| `SHOT_INTERVAL_SEC` | 0.25 | 촬영 간격 (초) |
 | `PLATE_BUFFER_EXPIRE_SEC` | 6.0 | 버퍼 만료 시간 (초) |
+
+---
+
+## 💻 개발 환경
+
+| 항목 | 내용 |
+|------|------|
+| OS | Ubuntu 22.04 (WSL2) |
+| Language | Python 3.11 |
+| Editor | VS Code |
+| DB | MariaDB |
+| 통신 | TCP Socket |
+| 프로토콜 | 자체 설계 PacketHeader |
 
 ---
 
 ## 🛠️ 실행
 
 ```bash
+# 가상환경 활성화
+source .venv/bin/activate
+
 # 의존성 설치
 pip install pymysql
 
 # 실행
 cd metal_guard_server
-python main.py
+python3 main.py
 
 # 종료
 Ctrl+C
@@ -254,3 +276,20 @@ Ctrl+C
 ```python
 logging.getLogger("server").setLevel(logging.DEBUG)
 ```
+
+---
+
+## 🧪 테스트
+
+### AI 서버 통신 테스트
+```bash
+python3 test_ai.py
+```
+AI 서버 연결 확인 및 이미지 전송/추론 결과 수신 테스트.
+단건 전송 또는 전체 이미지 순서대로 전송 가능.
+
+### DB 연결 테스트
+```bash
+python3 test_db.py
+```
+MariaDB 연결 확인 및 `inspection_result`, `pipeline_log` INSERT 테스트.

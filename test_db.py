@@ -41,10 +41,9 @@ def main():
         max_prob=0.85,
         inference_ms=9.5,
         pipeline_ms=120.3,
-        timeout_flag=False,
         image_path=None,
         heatmap_path=None,
-        model_version_id=1,
+        model_version_id=3,
     )
 
     if new_id is None:
