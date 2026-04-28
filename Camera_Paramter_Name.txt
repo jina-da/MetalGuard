@@ -1,0 +1,423 @@
+//Enumeration Get/Set example
+//char Temp[20];
+//(CString)Temp==_T("");
+//m_CameraManager.GetEnumeration(m_iCameraIndex,Temp,"GainAuto");          
+//m_CameraManager.SetEnumeration(m_iCameraIndex,"Once","GainAuto");
+
+//Integer Get/Set example
+//int nTemp;
+//m_CameraManager.GetInteger(m_iCameraIndex,&nTemp,"GainRaw");
+//m_CameraManager.SetInteger(m_iCameraIndex,400,"GainRaw");
+
+//Boolean  Get/Set example
+//bool bTemp;
+//m_CameraManager.GetBoolean(m_iCameraIndex,&bTemp,"ReverseX");   
+//m_CameraManager.SetBoolean(m_iCameraIndex,true,"ReverseX");     
+
+// Command Set example
+//m_CameraManager.SetCommand(m_iCameraIndex,"TriggerSoftware");   
+/*************************************************************************************************/
+/*							Analog Control  									   				 */
+/*************************************************************************************************/
+/*
+
+       Node Name		 : GainAuto    
+       Interface Type	 : IEnumeration
+	   Value			 : Off , Once  , Continuous
+*/
+/**********************************************************************************/ 
+/*
+
+       Node Name		 : GainSelector
+       Interface Type	 : IEnumeration
+	   Value			 : All , Tap1, Tap2, Tap3, Tap4
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : GainRaw
+       Interface Type	 : IInteger
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : BlackLevelSelector
+       Interface Type	 : IEnumeration
+	   Value			 : All , Tap1, Tap2, Tap3, Tap4
+*/
+/**********************************************************************************/ 
+/*
+     
+       Node Name		 : BlackLevelRaw
+       Interface Type	 : IInteger
+*/
+/**********************************************************************************/ 
+/*
+       
+       Node Name		 : BalanceWhiteAuto
+       Interface Type	 : IEnumeration
+	   Value			 : Off , Once, Continuous
+*/
+/**********************************************************************************/ 
+/*
+      
+       Node Name		 : BalanceRatioSelector
+       Interface Type	 : IEnumeration
+	   Value			 : Red , Green, Blue
+*/
+/**********************************************************************************/ 
+/*
+     
+       Node Name		 : BalanceRatioRaw
+       Interface Type	 : IInteger
+*/
+/**********************************************************************************/ 
+/*
+     
+       Node Name		 : GammaEnable
+       Interface Type	 : IBoolean
+*/
+/**********************************************************************************/ 
+/*
+       
+       Node Name		 : GammaSelector
+       Interface Type	 : IEnumeration
+	   Value			 : User , sRGB
+*/
+/**********************************************************************************/ 
+/*
+      
+       Node Name		 : Gamma
+       Interface Type	 : IFloat
+*/
+/**********************************************************************************/ 
+/*
+      
+       Node Name		 : DigitalShift
+       Interface Type	 : IInteger
+*/    
+/**********************************************************************************/ 
+
+/*************************************************************************************************/
+/*							Image Format Control  											     */
+/*************************************************************************************************/
+/*
+    
+       Node Name		 : PixelFormat
+       Interface Type	 : IEnumeration
+	   Value			 : Mono8 , Mono10 , Mono12 , Mono12Packed , BayerGR8 
+	                       BayerRG8 , BayerGB8 , BayerBG8 , YUV422Packed
+*/ 
+/**********************************************************************************/
+/*
+      
+       Node Name		 : ReverseX
+       Interface Type	 : IBoolean
+*/ 
+/*************************************************************************************************/
+/*							AOI  Control		  											     */
+/*************************************************************************************************/
+/*
+      
+       Node Name		 : Width
+       Interface Type	 : IInteger
+*/
+/**********************************************************************************/
+/*
+      
+       Node Name		 : Height
+       Interface Type	 : IInteger
+*/
+/**********************************************************************************/
+/*
+      
+       Node Name		 : OffsetX
+       Interface Type	 : IInteger
+*/
+/**********************************************************************************/
+/*
+       Node Name		 : OffsetY
+       Interface Type	 : IInteger
+*/
+/**********************************************************************************/
+/*
+       Node Name		 : CenterX
+       Interface Type	 : IBoolean
+*/           
+/**********************************************************************************/
+/*
+       Node Name		 : CenterY
+       Interface Type	 : IBoolean
+*/
+/**********************************************************************************/
+/*
+       Node Name		 : BinningHorizontal
+       Interface Type	 : IInteger 
+*/  
+/**********************************************************************************/
+/*
+       Node Name		 : BinningVertical
+       Interface Type	 : IInteger
+*/
+/*************************************************************************************************/
+/*							Acquisition  Control		  									     */
+/*************************************************************************************************/
+/* 
+	   Node Name		 : AcquisitionFrameCount
+	   Interface Type	 : IInteger
+*/
+/**********************************************************************************/
+/*
+	   Node Name		 : TriggerSelector
+	   Interface Type	 : IEnumeration
+	   Value             : AcquisitionStart, FrameStart , LineStart 
+*/
+/**********************************************************************************/
+/*
+	   Node Name		 : TriggerMode
+	   Interface Type	 : IEnumeration
+	   Value             : On , Off
+*/
+/**********************************************************************************/
+/*
+	   Node Name		 : TriggerSoftware
+	   Interface Type	 : ICommand
+*/
+/**********************************************************************************/
+/*
+	   Node Name		 : TriggerSource
+	   Interface Type	 : IEnumeration
+	   Value             : Software , Line1 , Line2 ~ Line 7 , CC1, CC2 , CC3, CC4
+*/
+/**********************************************************************************/
+/*
+	   Node Name		 : TriggerActivation
+	   Interface Type	 : IEnumeration
+	   Value             : RisingEdge , FallingEdge , AnyEdge , LevelHigh , LevelLow
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : TriggerDelayAbs 
+       Interface Type	 : IFloat
+	   단위              : microseconds
+*/
+/**********************************************************************************/
+/*
+	   Node Name		 : ExposureMode
+	   Interface Type	 : IEnumeration
+	   Value             : Timed , TriggerWidth , TriggerControlled
+*/
+/**********************************************************************************/
+/*
+	   Node Name		 : ExposureAuto
+	   Interface Type	 : IEnumeration
+	   Value             : Off , Once  , Continuous
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : ExposureTimeAbs 
+       Interface Type	 : IFloat
+	   단위              : microseconds  . (ExposureTimeRaw * ExpsureTimeBase = ExposureTimeAbs)
+	                       acA카메라의 경우 ExposureTimeBase = 1
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : ExposureTimeRaw 
+       Interface Type	 : IInteger
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : ReadoutTimeAbs 
+       Interface Type	 : IFloat
+	   단위              : microseconds
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : ExposureOverlapTimeMaxAbs 
+       Interface Type	 : IFloat
+	   단위              : microseconds
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : ExposureOverlapTimeMaxRaw 
+       Interface Type	 : IInteger
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : AcquisitionFrameRateEnable 
+       Interface Type	 : IBoolean
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : AcquisitionFrameRateAbs 
+       Interface Type	 : IFloat
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : ResultingFrameRateAbs 
+       Interface Type	 : IFloat
+*/
+/**********************************************************************************/
+/*
+	   Node Name		 : AcquisitionStatusSelector
+	   Interface Type	 : IEnumeration
+	   Value             : AcquisitionTriggerWait , AcquisitionActive  , AcquisitionTransfer , 
+	                       FrameTriggerWait , FrameActive , FrameTransfer , ExposureActive
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : AcquisitionStatus 
+       Interface Type	 : IBoolean
+*/
+/*************************************************************************************************/
+/*							Digital I/O  Control		  										 */
+/*************************************************************************************************/
+
+/**********************************************************************************/
+/*
+	   Node Name		 : LineSelector
+	   Interface Type	 : IEnumeration
+	   Value             : Line1 , Out1	   
+*/
+/**********************************************************************************/
+/*
+	   Node Name		 : LineMode
+	   Interface Type	 : IEnumeration
+	   Value             : Input , Output	   
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : LineInverter 
+       Interface Type	 : IBoolean
+*/
+/**********************************************************************************/ 
+/*
+       Node Name		 : LineDebouncerTimeAbs 
+       Interface Type	 : IFloat
+       단위              : microseconds
+*/
+/**********************************************************************************/
+/*
+	   Node Name		 : LineSource
+	   Interface Type	 : IEnumeration
+	   Value             : ExposureActive , FrameTriggerWait , TimerActive , UserOutput
+	                       AcquisitionTriggerWait , FlashWindow	   
+*/
+
+/*********************************************************************************/
+/*
+	   Node Name		 : LineStatus
+	   Interface Type	 : IBoolean
+*/
+/*********************************************************************************/
+/*
+	   Node Name		 : LineStatusAll
+	   Interface Type	 : IInteger
+*/
+/*********************************************************************************/
+/*
+	   Node Name		 : UserOutputSelector
+	   Interface Type	 : IEnumeration
+	   Value             : UserOutput1, UserOutput2
+*/
+/*********************************************************************************/
+/*
+	   Node Name		 : UserOutputValue
+	   Interface Type	 : IBoolean
+*/
+/*********************************************************************************/
+/*
+	   Node Name		 : UserOutputValueAll
+	   Interface Type	 : IInteger
+*/
+
+/*************************************************************************************************/
+/*							Configuration Sets			  										 */
+/*************************************************************************************************/
+/**********************************************************************************/
+/*
+	   Node Name         : UserSetSelector
+  	   Interface Type    : IEnumeration
+  	   Value             : Default , UserSet1 , UserSet2 , UserSet3
+*/
+/**********************************************************************************/  	       
+/*
+	   Node Name         : UserSetLoad
+  	   Interface Type    : ICommand
+*/
+/**********************************************************************************/  
+/*
+	   Node Name         : UserSetSave
+  	   Interface Type    : ICommand
+*/
+/**********************************************************************************/  
+/*
+	   Node Name         : UserSetDefaultSelector
+  	   Interface Type    : IEnumeration
+  	   Value             : Default , UserSet1 , UserSet2 , UserSet3
+*/
+/**********************************************************************************/ 
+/*
+	   Node Name         : DefaultSetSelector
+  	   Interface Type    : IEnumeration
+  	   Value             : Standard , HighGain , AutoFunctions , Color
+*/
+/**********************************************************************************/ 
+/*************************************************************************************************/
+/*							Transport Layer				  										 */
+/*************************************************************************************************/
+/**********************************************************************************/  	       
+/*
+       Feature           : Packet Size
+	   Node Name         : GevSCPSPacketSize
+  	   Interface Type    : IInteger
+*/
+/**********************************************************************************/
+/*
+       Feature           : Inter-Packet Delay
+	   Node Name         : GevSCPD
+  	   Interface Type    : IInteger
+*/
+/**********************************************************************************/
+/*
+       Feature           : Frame Transmission Delay
+	   Node Name         : GevSCFTD
+  	   Interface Type    : IInteger
+*/
+/**********************************************************************************/
+/*
+       Feature           : Bandwidth Reserve
+	   Node Name         : GevSCBWR
+  	   Interface Type    : IInteger
+*/
+/**********************************************************************************/
+/*
+       Feature           : Bandwidth Reserve Accumulation
+	   Node Name         : GevSCBWRA
+  	   Interface Type    : IInteger
+*/
+/**********************************************************************************/
+/*************************************************************************************************/
+/*							Remove Parameter				  									 */
+/*************************************************************************************************/
+/**********************************************************************************/
+/*
+       Feature           : Parameter Selector
+	   Node Name         : ParameterSelector
+  	   Interface Type    : IEnumeration
+  	   Value             : Gain , BlackLevel, ExposureTime  , Framerate
+*/
+/**********************************************************************************/
+/*
+       Feature           : Remove Limits
+	   Node Name         : RemoveLimits
+  	   Interface Type    : IBoolean
+*/
+/**********************************************************************************/
+/*************************************************************************************************/
+/*							Transport Layer 2				  									 */
+/*************************************************************************************************/
+/*
+       Feature           : Heartbeat Timeout
+	   Node Name         : HeartbeatTimeout
+  	   Interface Type    : IInteger
+*/
+/**********************************************************************************/

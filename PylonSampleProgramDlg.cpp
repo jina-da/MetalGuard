@@ -148,7 +148,6 @@ BEGIN_MESSAGE_MAP(CPylonSampleProgramDlg, CDialog)
 	ON_BN_CLICKED(IDC_TWO_CAMERA_LIVE_BTN, &CPylonSampleProgramDlg::OnBnClickedTwoCameraLiveBtn)
 	ON_BN_CLICKED(IDC_CAM2_LIVE,           &CPylonSampleProgramDlg::OnBnClickedCam2Live)
 	ON_BN_CLICKED(IDC_CAM3_LIVE,           &CPylonSampleProgramDlg::OnBnClickedCam3Live)
-	// ─── 원클릭 시작 버튼 (신규) ──────────────────────────────
 	ON_BN_CLICKED(IDC_ONE_CLICK_START,     &CPylonSampleProgramDlg::OnBnClickedOneClickStart)
 	ON_MESSAGE(WM_UPDATE_LOG,     &CPylonSampleProgramDlg::OnUpdateLog)
 	ON_MESSAGE(WM_UPDATE_VERDICT, &CPylonSampleProgramDlg::OnUpdateVerdict)
@@ -248,7 +247,7 @@ BOOL CPylonSampleProgramDlg::OnInitDialog()
 	return TRUE;
 }
 
-// ── 원클릭 시작 (카메라 찾기 + 열기 + 연결 + 라이브 한번에) ──
+// 원클릭 시작 (카메라 찾기 + 열기 + 연결 + 라이브 한번에)
 void CPylonSampleProgramDlg::OnBnClickedOneClickStart()
 {
 	WriteLog(_T("[시스템] 원클릭 시작 - 카메라 초기화 중..."));
@@ -585,7 +584,7 @@ UINT CPylonSampleProgramDlg::ThreadReclassify(LPVOID pParam)
 	return 0;
 }
 
-// ── 로그 헬퍼 (UI 스레드 안전) ────────────────────────────────
+// 로그 헬퍼 (UI 스레드 안전)
 void CPylonSampleProgramDlg::WriteLog(const CString& strMsg)
 {
 	if (g_hMainWnd == NULL || !::IsWindow(g_hMainWnd)) return;
@@ -607,7 +606,7 @@ LRESULT CPylonSampleProgramDlg::OnUpdateLog(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-// ── 판정 결과 UI 업데이트 (WM_UPDATE_VERDICT) ─────────────────
+// 판정 결과 UI 업데이트 (WM_UPDATE_VERDICT)
 LRESULT CPylonSampleProgramDlg::OnUpdateVerdict(WPARAM wParam, LPARAM lParam)
 {
 	VerdictData* pV = reinterpret_cast<VerdictData*>(wParam);
@@ -684,7 +683,7 @@ LRESULT CPylonSampleProgramDlg::OnUpdateVerdict(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-// ── 판정 결과에 따른 컨트롤 배경색 처리 ──────────────────────
+// 판정 결과에 따른 컨트롤 배경색 처리
 HBRUSH CPylonSampleProgramDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
 {
 	HBRUSH hbr = CDialog::OnCtlColor(pDC, pWnd, nCtlColor);
@@ -693,7 +692,7 @@ HBRUSH CPylonSampleProgramDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
 	{
 		UINT nID = pWnd->GetDlgCtrlID();
 
-		// ── 판정 결과 텍스트 (크게 표시되는 PASS/FAIL/UNCERTAIN) ──
+		// 판정 결과 텍스트 (크게 표시되는 PASS/FAIL/UNCERTAIN)
 		if (nID == IDC_VERDICT_DISPLAY)
 		{
 			if (m_strCurrentVerdict == _T("PASS")) {
@@ -713,7 +712,7 @@ HBRUSH CPylonSampleProgramDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
 			}
 		}
 
-		// ── AI 확률값 텍스트 (최고 확률 클래스에 색상) ──
+		// AI 확률값 텍스트 (최고 확률 클래스에 색상)
 		if (nID == IDC_PROB_NORMAL || nID == IDC_PROB_CRACK ||
 		    nID == IDC_PROB_HOLE   || nID == IDC_PROB_RUST  || nID == IDC_PROB_SCRATCH)
 		{
@@ -738,7 +737,7 @@ HBRUSH CPylonSampleProgramDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
 			}
 		}
 
-		// ── LED 상태 텍스트 색상 ──
+		// LED 상태 텍스트 색상
 		if (nID == IDC_LED_GREEN) {
 			if (m_strCurrentVerdict == _T("PASS")) {
 				pDC->SetTextColor(RGB(0, 160, 0));
@@ -761,13 +760,13 @@ HBRUSH CPylonSampleProgramDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
 			}
 		}
 
-		// ── DB 테이블 행 색상은 NM_CUSTOMDRAW로 처리 (아래 참조) ──
+		// DB 테이블 행 색상은 NM_CUSTOMDRAW로 처리 (아래 참조)
 	}
 
 	return hbr;
 }
 
-// ── DB 테이블 행 색상 (판정 결과에 따라) ──────────────────────
+// DB 테이블 행 색상 (판정 결과에 따라)
 void CPylonSampleProgramDlg::OnNMCustomdrawDbList(NMHDR* pNMHDR, LRESULT* pResult)
 {
 	NMLVCUSTOMDRAW* pNMCD = reinterpret_cast<NMLVCUSTOMDRAW*>(pNMHDR);

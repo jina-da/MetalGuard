@@ -8,8 +8,6 @@
 
 #define WM_UPDATE_LOG     (WM_USER + 100)
 #define WM_USER_ADD_LOG   (WM_USER + 101)
-
-// 원클릭 시작 버튼 ID
 #define IDC_ONE_CLICK_START 1080
 
 class CPylonSampleProgramDlg;
@@ -19,8 +17,6 @@ struct ReclassifyParam {
 	cv::Mat matImage;
 	int nPlateId;
 };
-
-// VerdictData -> MetalGuardTypes.h 참조
 
 class CPylonSampleProgramDlg : public CDialog
 {
@@ -117,8 +113,6 @@ public:
 	afx_msg void OnBnClickedCam3Live();
 	afx_msg void OnBnClickedReclassifyBtn();
 	afx_msg void OnCbnSelchangeModeCombo();
-
-	// 원클릭 시작 (신규)
 	afx_msg void OnBnClickedOneClickStart();
 	afx_msg void OnNMCustomdrawDbList(NMHDR* pNMHDR, LRESULT* pResult);
 

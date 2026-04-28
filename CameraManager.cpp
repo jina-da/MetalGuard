@@ -13,7 +13,6 @@
 #pragma comment(lib, "opencv_world4130.lib")
 #endif
 
-// 네임스페이스 선언
 using namespace cv;
 using namespace Pylon;
 using namespace GenICam;
@@ -145,11 +144,6 @@ int CCameraManager::Open_Camera(int nCamIndex, int nPosition)
 
 		// 장치 연결
 		m_pCamera[nCamIndex].Attach(m_tlFactory->CreateDevice(devices[0]));
-
-		// --- 오류 수정 구간 시작 ---
-		// Pylon 5~7 버전에서는 RegistrationMode와 Ownership을 명확히 구분해야 합니다.
-		// Ownership_ExternalOwnership 대신 Cleanup_None을 사용하는 경우도 많으나,
-		// 현재 코드의 의도를 유지하기 위해 경로를 완전히 명시합니다.
 
 		// 1. 카메라 제거 콜백 등록
 		m_pCamera[nCamIndex].RegisterConfiguration(
@@ -469,7 +463,7 @@ void CCameraManager::WriteLog(int nCamIdx, CString strStatus, CString strDetail)
 		if (hWndList != NULL && ::IsWindow(hWndList))
 		{
 			CString strListLine;
-			// [수정] 서버 판정 결과는 로그에서 더 잘 보이도록 특수문자 추가
+			// 서버 판정 결과는 로그에서 더 잘 보이도록 특수문자 추가
 			if (strStatus == _T("판정")) {
 				strListLine.Format(_T("[%02d:%02d:%02d] >> %s"), Hour, Min, Sec, strDetail);
 			}
@@ -1056,7 +1050,7 @@ bool CCameraManager::ConnectToServer(std::string ip, int port)
 
 	m_bIsServerConnected = true;
 
-	// [추가] 서버에서 오는 판정 결과를 실시간으로 받기 위해 수신 스레드 시작
+	// 서버에서 오는 판정 결과를 실시간으로 받기 위해 수신 스레드 시작
 	AfxBeginThread(ThreadReceiveFromServer, this);
 
 	return true;
@@ -1174,7 +1168,7 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 	int nTotalPixels   = diff.rows * diff.cols;
 	DWORD dwNow        = GetTickCount();
 
-	// ── 1단계: 조명 꺼짐/켜짐 감지 (전체 픽셀 40% 이상 변화) ──
+	// 1단계: 조명 꺼짐/켜짐 감지 (전체 픽셀 40% 이상 변화)
 	if (nChangedPixels > nTotalPixels * 40 / 100)
 	{
 		gray.copyTo(m_matPrevFrame[nCamIndex]);   // 배경 즉시 리셋
@@ -1183,7 +1177,7 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 		return false;
 	}
 
-	// ── 2단계: 조명 변화 직후 2초간 감지 억제 ──
+	// 2단계: 조명 변화 직후 2초간 감지 억제
 	if (m_dwLightChangeTime[nCamIndex] > 0 &&
 	    dwNow - m_dwLightChangeTime[nCamIndex] < 2000)
 	{
@@ -1192,7 +1186,7 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 		return false;
 	}
 
-	// ── 3단계: 변화 없음 → 배경 서서히 업데이트 ──
+	// 3단계: 변화 없음 → 배경 서서히 업데이트
 	if (nChangedPixels < 500)
 	{
 		cv::addWeighted(m_matPrevFrame[nCamIndex], 0.95, gray, 0.05, 0, m_matPrevFrame[nCamIndex]);
@@ -1200,7 +1194,7 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 		return false;
 	}
 
-	// ── 4단계: 500~2000픽셀 사이는 노이즈/그림자로 간주, 배경 중간 속도 업데이트 ──
+	// 4단계: 500~2000픽셀 사이는 노이즈/그림자로 간주, 배경 중간 속도 업데이트
 	if (nChangedPixels < 2000)
 	{
 		cv::addWeighted(m_matPrevFrame[nCamIndex], 0.85, gray, 0.15, 0, m_matPrevFrame[nCamIndex]);
@@ -1208,7 +1202,7 @@ bool CCameraManager::DetectObject(int nCamIndex, cv::Mat& currentFrame)
 		return false;
 	}
 
-	// ── 5단계: 2000픽셀 이상 → 연속 3프레임 유지 시 물체 확정 ──
+	// 5단계: 2000픽셀 이상 → 연속 3프레임 유지 시 물체 확정
 	m_nConsecutiveDetect[nCamIndex]++;
 	if (m_nConsecutiveDetect[nCamIndex] >= 3)
 	{
